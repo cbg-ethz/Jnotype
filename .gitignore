@@ -1,3 +1,23 @@
+# Data files
+data/
+
+*.zip
+*.tar.*
+*.pdf
+*.png
+*.csv
+*.yaml
+*.yml
+*.json
+*.npy
+*.npz
+
+
+# Notebooks
+*.ipynb
+*.nb
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
