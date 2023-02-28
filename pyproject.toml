@@ -18,6 +18,7 @@ pytest = "^7.2.1"
 pytest-cov = "^4.0.0"
 pytest-xdist = "^3.2.0"
 pre-commit = "^3.1.0"
+pyright = "^1.1.296"
 
 [build-system]
 requires = ["poetry-core"]
@@ -43,3 +44,12 @@ quiet = false
 whitelist-regex = []
 color = true
 
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/node_modules",
+    "**/__pycache__",
+]
+
+reportMissingImports = true
+reportMissingTypeStubs = false

@@ -50,5 +50,6 @@ jobs:
         run: poetry run ruff check .
       - name: Run interrogate
         run: poetry run interrogate src
-
+      - name: Run Pyright (type checking)
+        run: pyright
 
