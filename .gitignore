@@ -21,6 +21,12 @@ data/
 .idea/
 .vscode/
 
+# Private files, not committed
+private/
+poetry.toml
+# This one is disputable
+poetry.lock
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
