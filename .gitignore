@@ -17,6 +17,9 @@ data/
 *.ipynb
 *.nb
 
+# Coding environments
+.idea/
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
