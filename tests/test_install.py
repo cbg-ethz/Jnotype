@@ -3,6 +3,6 @@ from types import ModuleType
 
 
 def test_install():
-    import baypy as bp
+    import jnotype as jn
 
-    assert isinstance(bp, ModuleType)
+    assert isinstance(jn, ModuleType)
