@@ -8,6 +8,8 @@ import jax.numpy as jnp
 from jax import random
 from jaxtyping import Array, Float, Int
 
+import xarray as xr
+
 
 def _bernoulli_loglikelihood(
     observed: Int[Array, "N K"],
@@ -231,6 +233,12 @@ def _init_params(
     return proportions, mixing
 
 
+def _map_storage(dct: dict) -> dict:
+    """Casts to JAX NumPy arrays the values in the dictionary
+    storing a list of samples."""
+    return {key: jnp.asarray(val) for key, val in dct.items()}
+
+
 def gibbs_sampler(
     *,
     key: random.PRNGKeyArray,
@@ -238,20 +246,34 @@ def gibbs_sampler(
     dirichlet_prior: Float[Array, " B"],
     beta_prior: tuple[float, float] = (1.0, 1.0),
     n_samples: int = 5_000,
-    thinning: int = 1,
+    thinning: int = 10,
     burnin: int = 1_000,
     _verbose: bool = False,
     _report_every: int = 1_000,
     proportions: Optional[Float[Array, " B"]] = None,
     mixing: Optional[Float[Array, "K B"]] = None,
-) -> dict:
+) -> xr.Dataset:
     """Gibbs sampler for Bernoulli mixture model.
 
     Args:
         key: JAX random key
+        observed_data: observed data, shape (n_points, n_features)
+        dirichlet_prior: Dirichlet prior weights
+          on the cluster proportions, shape (n_clusters,)
+        beta_prior: beta prior weights on the mixing matrix entries
+        n_samples: number of samples to draw
+        thinning: we save a sample every `thinning` steps
+        burnin: number of warm-up steps. These draws are not saved.
+        _verbose: whether to log progress
+        _report_every: controls how often progress is reported
+        proportions: initial starting point for the cluster proportions
+          P(Z). If None, they will be sampled from the prior
+        mixing: initial starting point for the mixing matrix. If None,
+          it will be sampled from the prior
 
     Returns:
-        TODO(Pawel): xarray with the samples
+        xarray's `Dataset` with samples from the posterior
+        TODO(Pawel): Add more elaborate description
     """
     key_init, key_burnin, key_sampling = random.split(key, 3)
 
@@ -318,5 +340,30 @@ def gibbs_sampler(
                 f"Current sampling speed: {n_collected/delta_t:.1f} samples/second."
             )
 
-    # TODO(Pawel): Change the return type.
-    return storage
+    storage = _map_storage(storage)
+    dataset = xr.Dataset(
+        {
+            "labels": (["sample", "observation"], storage["labels"]),
+            "proportions": (["sample", "cluster"], storage["proportions"]),
+            "mixing": (["sample", "feature", "cluster"], storage["mixing"]),
+        },
+        coords={
+            "sample": (["sample"], jnp.arange(len(storage["labels"]))),
+            "observation": (["observation"], jnp.arange(observed_data.shape[0])),
+            "cluster": (["cluster"], jnp.arange(dirichlet_prior.shape[0])),
+            "feature": (["feature"], jnp.arange(observed_data.shape[1])),
+        },
+        attrs={
+            "description": "Draws from the posterior distribution "
+            "of Bernoulli Mixture Model using Gibbs sampler.",
+            "burnin": burnin,
+            "thinning": thinning,
+            "n_sampling_steps": n_steps,
+            "n_samples": len(storage["labels"]),
+            "beta_prior": beta_prior,
+            "dirichlet_prior": dirichlet_prior,
+            "time": time.time() - t0,
+        },
+    )
+
+    return dataset
