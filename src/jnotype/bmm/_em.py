@@ -300,7 +300,7 @@ def expectation_maximization(
             history.append(entry)
             if verbose:
                 _log(
-                    f"At time {delta_t} step {step}/{max_n_steps} was reached "
+                    f"At time {delta_t:.2f} step {step}/{max_n_steps} was reached "
                     f"({step / delta_t:.1f} steps/second)."
                 )
 
@@ -312,7 +312,7 @@ def expectation_maximization(
     if verbose:
         delta_t = time.time() - t0
         _log(
-            f"At time {delta_t} optimization finished at step {step}/{max_n_steps} "
+            f"At time {delta_t:.2f} optimization finished at step {step}/{max_n_steps} "
             f"({step / delta_t:.1f} steps/second)."
         )
 
