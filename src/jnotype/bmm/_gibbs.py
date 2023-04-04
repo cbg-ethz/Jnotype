@@ -1,5 +1,6 @@
 """Sampling cluster labels and proportions."""
 import time
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -200,50 +201,122 @@ def _log(msg: str) -> None:
     print(msg)
 
 
+def _init_params(
+    key: random.PRNGKeyArray,
+    dirichlet_prior: Float[Array, " B"],
+    beta_prior: tuple[float, float],
+    n_features: int,
+    proportions: Optional[Float[Array, " B"]],
+    mixing: Optional[Float[Array, "K B"]],
+) -> tuple[Float[Array, " B"], Float[Array, "K B"],]:
+    """Samples initial values for the parameters if they have not been defined."""
+    key_prop, key_mixing = random.split(key)
+
+    n_clusters = dirichlet_prior.shape[0]
+
+    sampled_proportions = random.dirichlet(key_prop, dirichlet_prior)
+    sampled_mixing = random.beta(
+        key_mixing, beta_prior[0], beta_prior[1], shape=(n_features, n_clusters)
+    )
+
+    assert sampled_proportions.shape == (n_clusters,)
+    assert sampled_mixing.shape == (n_features, n_clusters)
+
+    proportions = sampled_proportions if proportions is None else proportions
+    mixing = sampled_mixing if mixing is None else mixing
+
+    assert proportions.shape == (n_clusters,)
+    assert mixing.shape == (n_features, n_clusters)
+
+    return proportions, mixing
+
+
 def gibbs_sampler(
     *,
     key: random.PRNGKeyArray,
     observed_data: Int[Array, "N K"],
-    n_samples: int,
+    dirichlet_prior: Float[Array, " B"],
+    beta_prior: tuple[float, float] = (1.0, 1.0),
+    n_samples: int = 5_000,
     thinning: int = 1,
     burnin: int = 1_000,
     _verbose: bool = False,
     _report_every: int = 1_000,
-) -> None:
+    proportions: Optional[Float[Array, " B"]] = None,
+    mixing: Optional[Float[Array, "K B"]] = None,
+) -> dict:
     """Gibbs sampler for Bernoulli mixture model.
 
     Args:
         key: JAX random key
+
+    Returns:
+        TODO(Pawel): xarray with the samples
     """
-    key_burnin, key_sampling = random.split(key, 2)
+    key_init, key_burnin, key_sampling = random.split(key, 3)
+
+    proportions, mixing = _init_params(
+        key=key_init,
+        dirichlet_prior=dirichlet_prior,
+        beta_prior=beta_prior,
+        proportions=proportions,
+        mixing=mixing,
+        n_features=observed_data.shape[1],
+    )
 
     if _verbose:
         _log("Starting the burn-in phase sampling...")
 
     # Run burn in samples
     for key in random.split(key_burnin, burnin):
-        # TODO(Pawel): Run sampling, but burning samples
-        # _, proportions, mixing = sample_mixing("This bit is missing!!!")
-        pass
+        _, proportions, mixing = single_sampling_step(
+            key=key,
+            observed_data=observed_data,
+            proportions=proportions,
+            mixing=mixing,
+            dirichlet_prior=dirichlet_prior,
+            beta_prior=beta_prior,
+        )
 
     if _verbose:
-        _log("Burn-in phase finished. Sampling ")
+        _log("Burn-in phase finished. Starting proper sampling...")
 
     t0 = time.time()
 
-    n_steps = burnin + thinning * n_samples
-    keys = random.split(key, n_steps)
+    n_steps = thinning * n_samples
+    keys = random.split(key_sampling, n_steps)
 
-    for step, key in enumerate(keys):
-        # Sample new values
-        # TODO(Pawel): This bit is missing
+    storage = {
+        "labels": [],
+        "proportions": [],
+        "mixing": [],
+    }
 
-        # Decide whether to save
-        # TODO(Pawel): Missing
+    for step, key in enumerate(keys, 1):
+        labels, proportions, mixing = single_sampling_step(
+            key=key,
+            observed_data=observed_data,
+            proportions=proportions,
+            mixing=mixing,
+            dirichlet_prior=dirichlet_prior,
+            beta_prior=beta_prior,
+        )
+
+        # Save samples every `thinning` steps
+        if step % thinning == 0:
+            storage["labels"].append(labels)
+            storage["proportions"].append(proportions)
+            storage["mixing"].append(mixing)
 
         # Decide whether to print
-        if _verbose and step % _report_every == 0 and step > burnin:
-            time.time() - t0
-            _log("MISSING")
+        if _verbose and step % _report_every == 0:
+            delta_t = time.time() - t0
+            n_collected = len(storage["labels"])
+            _log(
+                f"In {delta_t:.2f} performed {step} steps "
+                f"and collected {n_collected}/{n_samples} samples. "
+                f"Current sampling speed: {n_collected/delta_t:.1f} samples/second."
+            )
 
-    pass
+    # TODO(Pawel): Change the return type.
+    return storage
