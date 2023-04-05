@@ -141,6 +141,7 @@ class BlockImagesSampler:
         self,
         key: random.PRNGKeyArray,
         n_samples: int,
+        *,
         probs: Optional[Float[Array, " n_classes"]] = None,
         logits: Optional[Float[Array, " n_classes"]] = None,
     ) -> tuple[Int[Array, " n_samples"], Int[Array, "n_samples 6 6"]]:
@@ -149,9 +150,9 @@ class BlockImagesSampler:
         Args:
             key: JAX random key
             n_samples: number of samples to draw
-            probs: prevalence :math:`P(class)` vector.
+            probs: prevalence :math:`P(class)` vector
             logits: :math:`\\log P(class)` vector,
-              defining the log-prevalence of each class.
+              defining the log-prevalence of each class
 
         Returns:
             labels, shape (n_samples,).
@@ -159,9 +160,11 @@ class BlockImagesSampler:
             images, each image is a binary array of shape (6, 6)
 
         Note:
-            If neither `probs` nor `logits` are provided, a uniform
+            #. If neither `probs` nor `logits` are provided, a uniform
             distribution is assumed over all classes.
-            You cannot provide both arguments at the same time.
+            #. You cannot provide both arguments at the same time.
+            #. The `probs` are internally converted to `logits`. Hence,
+              if they do not sum up to 1, they will be changed.
 
         Raises:
             ValueError if both `probs` and `logits` are specified

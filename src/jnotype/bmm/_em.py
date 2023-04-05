@@ -200,6 +200,7 @@ def _maxabs(a: jax.Array) -> float:
     return float(jnp.max(jnp.abs(a)))
 
 
+@jax.jit
 def _should_stop(
     *,
     threshold: float,
