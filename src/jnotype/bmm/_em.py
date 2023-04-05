@@ -7,6 +7,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Int, Array
 
+import tqdm
+
 
 def compute_responsibilities(
     observed: Int[Array, "N K"],
@@ -196,10 +198,11 @@ def _log(msg: str, /) -> None:
     print(msg)  # TODO(Pawel): Replace with a logger.
 
 
-def _maxabs(a: jax.Array) -> float:
-    return float(jnp.max(jnp.abs(a)))
+def _maxabs(a: jax.Array):
+    return jnp.max(jnp.abs(a))
 
 
+@jax.jit
 def _should_stop(
     *,
     threshold: float,
@@ -207,11 +210,11 @@ def _should_stop(
     old_proportions: Float[Array, " B"],
     new_mixing: Float[Array, "K B"],
     new_proportions: Float[Array, " B"],
-) -> bool:
-    """Returns True iff the stopping criterion is satisfied."""
+):
+    """Returns True array iff the stopping criterion is satisfied."""
     diff_proportions = _maxabs(old_proportions - new_proportions)
     diff_mixing = _maxabs(old_mixing - new_mixing)
-    return max(diff_mixing, diff_proportions) < threshold
+    return jax.lax.max(diff_mixing, diff_proportions) < threshold
 
 
 def expectation_maximization(
@@ -267,7 +270,7 @@ def expectation_maximization(
         (observed.shape[0], len(proportions)), 1 / len(proportions)
     )
 
-    for step in range(1, max_n_steps + 1):
+    for step in tqdm.tqdm(range(1, max_n_steps + 1), disable=not verbose):
         # Run the update
         responsibilities, mixing_, proportions_ = em_step(
             observed=observed,
@@ -298,15 +301,11 @@ def expectation_maximization(
                 time=delta_t,
             )
             history.append(entry)
-            if verbose:
-                _log(
-                    f"At time {delta_t:.2f} step {step}/{max_n_steps} was reached "
-                    f"({step / delta_t:.1f} steps/second)."
-                )
 
         # Now stop if needed
         if should_stop:
-            _log(f"Early stopping at step {step}/{max_n_steps}.")
+            if verbose:
+                _log(f"Early stopping at step {step}/{max_n_steps}.")
             break
 
     if verbose:

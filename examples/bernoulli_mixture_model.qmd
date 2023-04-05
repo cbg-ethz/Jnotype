@@ -1,0 +1,227 @@
+---
+title: Analysis of binary images with a Bernoulli mixture model
+format:
+  html:
+    code-fold: true
+jupyter: python3
+toc: true
+number-sections: true
+---
+
+In this tutorial we will analyse binary images using the Bernoulli mixture model.
+
+## Generating the data
+
+First, let's generate some binary images using a provided sampler:
+
+```{python}
+import jax
+import jax.numpy as jnp
+
+import jnotype as jt
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+n_clusters = 5
+n_images = 500
+noise = 0.2
+key = jax.random.PRNGKey(5)
+
+sampler = jt.datasets.BlockImagesSampler(
+  false_negative=noise,
+  false_positive=noise,
+  n_classes=n_clusters,
+)
+
+prevalence = jnp.asarray([0.1, 0.1, 0.2, 0.3, 0.3])
+
+key, subkey = jax.random.split(key)
+true_labels, images = sampler.sample_dataset(
+  subkey,
+  n_images,
+  probs=prevalence,
+)
+```
+
+Without noise the images would look like these:
+```{python}
+#| label: fig-cluster-templates
+#| fig-cap: "How images would look like without noise."
+
+fig, axs = plt.subplots(1, n_clusters, figsize=(1.5 * n_clusters, 1.5))
+
+for i, ax in enumerate(axs.ravel()):
+    sns.heatmap(sampler.cluster_templates[i], ax=ax, cbar=False)
+    ax.set_axis_off()
+
+plt.show()
+```
+
+However, as we have noise, they look different:
+```{python}
+#| label: fig-sampled-images
+#| fig-cap: "Sampled images."
+
+fig, axs = plt.subplots(5, 8, figsize=(8, 5))
+
+for i, ax in enumerate(axs.ravel()):
+    sns.heatmap(images[i], ax=ax, cbar=None)
+    ax.set_axis_off()
+
+plt.show()
+```
+
+## Expectation-Maximization
+
+We will infer the parameters using the Expectation-Maximization algorithm. However, we need to reshape the input data to have shape `(n_images, n_features)`, while currently the data matrix has shape `(n_images, width, height)`.
+
+```{python}
+input_data = images.reshape((n_images, 6 * 6))
+
+key, subkey = jax.random.split(key)
+
+em_output = jt.bmm.expectation_maximization(
+        input_data,
+        key=subkey,
+        n_clusters=n_clusters,
+        verbose=True,
+        max_n_steps=5_000,
+        record_history=2,
+        early_stopping_threshold=1e-2,
+    )
+
+true_proportions_str = ' '.join(f"{x:.2f}" for x in sorted(prevalence))
+inferred_proportions_str = ' '.join(f"{x:.2f}" for x in sorted(em_output.proportions))
+
+print(f"True proportions: {true_proportions_str}")
+print(f"Inferred:         {inferred_proportions_str}")
+```
+
+Let's compare mixing matrices:
+```{python}
+#| label: fig-em-mixing
+#| fig-cap: "Mixing matrices inferred using EM algorithm."
+
+fig, axs = plt.subplots(2, n_clusters, figsize=(n_clusters, 2))
+
+for ar, ax in zip(sampler.mixing, axs[0, :]):
+  sns.heatmap(ar, ax=ax, cbar=False, cmap="magma", vmin=0, vmax=1)
+  ax.set_axis_off()
+
+for ar, ax in zip(em_output.mixing.T.reshape((-1, 6, 6)), axs[1, :]):
+  sns.heatmap(ar, ax=ax, cbar=False, cmap="magma", vmin=0, vmax=1)
+  ax.set_axis_off()
+
+plt.show()
+```
+
+## Gibbs sampling
+
+Now we will use a Gibbs sampler. We will use a larger number of clusters, having a misspecified model, and a Dirichlet shrinkage prior.
+
+```{python}
+n_clusters_upper = n_clusters + 3
+shrinkage_amount = 0.05
+
+key, subkey = jax.random.split(key)
+
+samples = jt.bmm.gibbs_sampler(
+    key=subkey,
+    observed_data=input_data,
+    dirichlet_prior=jnp.full(n_clusters_upper, shrinkage_amount),
+    thinning=5,
+    n_samples=500,
+    verbose=True,
+)
+```
+
+
+Let's visualise inferred proportions:
+
+```{python}
+#| label: fig-gibbs-proportions
+#| fig-cap: "Proportions using Gibbs sampler."
+
+fig, ax = plt.subplots()
+
+ax.hlines(jnp.unique(prevalence), 1, n_clusters_upper, linestyles="dashed", alpha=0.3, colors="k")
+
+ax.set_ylabel("Proportions $P(Z=k)$")
+ax.set_xlabel("Class $k$")
+
+ax.boxplot(
+    samples["proportions"],
+    capprops=dict(color="k"),
+    whiskerprops=dict(color="k"),
+    flierprops=dict(color="k", markeredgecolor="k"),
+    medianprops=dict(color="k"),
+)
+
+plt.show()
+```
+
+... and mixing matrices:
+
+```{python}
+#| label: fig-gibbs-mixing
+#| fig-cap: "Mixing matrices inferred using Gibbs sampler."
+
+fig, axs = plt.subplots(3, n_clusters_upper, figsize=(n_clusters_upper, 3))
+
+for ax in axs.ravel():
+    ax.set_axis_off()
+
+mixing_mean = samples["mixing"].to_numpy().mean(axis=0)
+mixing_std = samples["mixing"].to_numpy().std(axis=0)
+
+
+for arr, ax in zip(sampler.mixing, axs[0, :]):
+    sns.heatmap(arr, ax=ax, cmap="magma", vmin=0, vmax=1, cbar=False)
+    ax.set_axis_off()
+
+
+for arr, ax in zip(mixing_mean.T.reshape((-1, 6, 6)), axs[1, :]):
+    sns.heatmap(arr, ax=ax, cmap="magma", vmin=0, vmax=1, cbar=False)
+    ax.set_axis_off()
+
+
+for arr, ax in zip(mixing_std.T.reshape((-1, 6, 6)), axs[2, :]):
+    sns.heatmap(arr, ax=ax, cmap="magma", vmin=0, vmax=1, cbar=False)
+    ax.set_axis_off()
+
+plt.show()
+```
+
+
+We can also compare MAP cluster assignment to the true one:
+
+```{python}
+#| label: fig-gibbs-cluster-labels
+#| fig-cap: "Inferred cluster assignments."
+
+import numpy as np
+
+
+def get_histogram(one_sample):
+    return jax.nn.one_hot(one_sample, num_classes=n_clusters_upper).sum(axis=0)
+
+histograms = jax.vmap(get_histogram)(samples["labels"].to_numpy().T)
+inferred_labels = jnp.argmax(histograms, axis=1)
+
+count_matrix = np.zeros((5, n_clusters_upper))
+
+for (true, infer) in zip(true_labels, inferred_labels):
+    count_matrix[true, infer] += 1
+    
+prob_cond = count_matrix / count_matrix.sum(axis=1)[:, None]
+
+fig, ax = plt.subplots(figsize=(6, 8))
+
+ax.set_xlabel("True clusters")
+ax.set_ylabel("Inferred clusters")
+
+sns.heatmap(prob_cond.T, cmap="magma", ax=ax)
+
+plt.show()
+```
