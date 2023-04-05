@@ -15,7 +15,7 @@ This includes genotype data, binary images, and data sets used in ecology.
 We recommend setting up a new [virtual environment](https://docs.python.org/3/library/venv.html). You can install the package using PIP:
 
 ```bash
-$ python -m pip install 'jnotype @ git+https://github.com/cbg-ethz/jnotype
+$ python -m pip install 'jnotype @ git+https://github.com/cbg-ethz/jnotype'
 ```
 
 However, this will install the CPU version of JAX.
