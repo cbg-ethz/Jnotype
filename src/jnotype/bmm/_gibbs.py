@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from jax import random
 from jaxtyping import Array, Float, Int
 
+import tqdm
 import xarray as xr
 
 
@@ -248,10 +249,9 @@ def gibbs_sampler(
     n_samples: int = 5_000,
     thinning: int = 10,
     burnin: int = 1_000,
-    _verbose: bool = False,
-    _report_every: int = 1_000,
     proportions: Optional[Float[Array, " B"]] = None,
     mixing: Optional[Float[Array, "K B"]] = None,
+    verbose: bool = False,
 ) -> xr.Dataset:
     """Gibbs sampler for Bernoulli mixture model.
 
@@ -264,8 +264,7 @@ def gibbs_sampler(
         n_samples: number of samples to draw
         thinning: we save a sample every `thinning` steps
         burnin: number of warm-up steps. These draws are not saved.
-        _verbose: whether to log progress
-        _report_every: controls how often progress is reported
+        verbose: whether to log progress
         proportions: initial starting point for the cluster proportions
           P(Z). If None, they will be sampled from the prior
         mixing: initial starting point for the mixing matrix. If None,
@@ -286,7 +285,7 @@ def gibbs_sampler(
         n_features=observed_data.shape[1],
     )
 
-    if _verbose:
+    if verbose:
         _log("Starting the burn-in phase sampling...")
 
     # Run burn in samples
@@ -300,7 +299,7 @@ def gibbs_sampler(
             beta_prior=beta_prior,
         )
 
-    if _verbose:
+    if verbose:
         _log("Burn-in phase finished. Starting proper sampling...")
 
     t0 = time.time()
@@ -314,7 +313,9 @@ def gibbs_sampler(
         "mixing": [],
     }
 
-    for step, key in enumerate(keys, 1):
+    for step, key in tqdm.tqdm(
+        enumerate(keys, 1), total=len(keys), disable=not verbose
+    ):
         labels, proportions, mixing = single_sampling_step(
             key=key,
             observed_data=observed_data,
@@ -329,16 +330,6 @@ def gibbs_sampler(
             storage["labels"].append(labels)
             storage["proportions"].append(proportions)
             storage["mixing"].append(mixing)
-
-        # Decide whether to print
-        if _verbose and step % _report_every == 0:
-            delta_t = time.time() - t0
-            n_collected = len(storage["labels"])
-            _log(
-                f"In {delta_t:.2f} performed {step} steps "
-                f"and collected {n_collected}/{n_samples} samples. "
-                f"Current sampling speed: {n_collected/delta_t:.1f} samples/second."
-            )
 
     storage = _map_storage(storage)
     dataset = xr.Dataset(
