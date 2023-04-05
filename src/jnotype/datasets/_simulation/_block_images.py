@@ -149,7 +149,7 @@ class BlockImagesSampler:
         Args:
             key: JAX random key
             n_samples: number of samples to draw
-            probs: prevalence :math:`\\log P(class)` vector.
+            probs: prevalence :math:`P(class)` vector.
             logits: :math:`\\log P(class)` vector,
               defining the log-prevalence of each class.
 
