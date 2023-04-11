@@ -43,17 +43,19 @@ def test_prior(seed: int, n_vars: int, prior_shape: float, prior_scale: float) -
 
 @pytest.mark.parametrize("seed", (42, 12))
 @pytest.mark.parametrize("n_points", (100_000,))
+@pytest.mark.parametrize("var1", (0.8, 1.0))
+@pytest.mark.parametrize("var2", (1.2, 0.9))
 def test_infinite_data(
     seed: int,
     n_points: int,
+    var1: float,
+    var2: float,
     prior_shape: float = 2.0,
     prior_scale: float = 1.0,
 ) -> None:
     """Test whether in the infinite-data
     limit we get the shrinkage around true values."""
     keys = random.split(random.PRNGKey(seed), 3)
-
-    var1, var2 = 0.8, 1.2
 
     samples1 = jnp.sqrt(var1) * random.normal(keys[0], shape=(n_points,))
     samples2 = jnp.sqrt(var2) * random.normal(keys[1], shape=(n_points,))

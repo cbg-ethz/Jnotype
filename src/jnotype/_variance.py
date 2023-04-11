@@ -1,5 +1,6 @@
 """Utilities for sampling variances."""
 from jax import random
+import jax
 import jax.numpy as jnp
 
 from jaxtyping import Array, Float, Int
@@ -31,6 +32,7 @@ def _sample_precisions(
     return precisions
 
 
+@jax.jit
 def sample_variances(
     key: random.PRNGKeyArray,
     values: Float[Array, "G F"],
