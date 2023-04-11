@@ -1,7 +1,7 @@
 """Tests for the logistic regression."""
 import jax.numpy as jnp
 
-import jnotype.gibbs.logreg as lr
+import jnotype.logistic.logreg as lr
 
 
 def test_calculate_logits_smoke_test() -> None:
