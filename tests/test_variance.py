@@ -41,7 +41,36 @@ def test_prior(seed: int, n_vars: int, prior_shape: float, prior_scale: float) -
     assert empirical_variance == pytest.approx(analytic_variance, rel=0.05)
 
 
-def test_infinite_data() -> None:
+@pytest.mark.parametrize("seed", (42, 12))
+@pytest.mark.parametrize("n_points", (100_000,))
+def test_infinite_data(
+    seed: int,
+    n_points: int,
+    prior_shape: float = 2.0,
+    prior_scale: float = 1.0,
+) -> None:
     """Test whether in the infinite-data
     limit we get the shrinkage around true values."""
-    assert False
+    keys = random.split(random.PRNGKey(seed), 3)
+
+    var1, var2 = 0.8, 1.2
+
+    samples1 = jnp.sqrt(var1) * random.normal(keys[0], shape=(n_points,))
+    samples2 = jnp.sqrt(var2) * random.normal(keys[1], shape=(n_points,))
+
+    samples = jnp.vstack([samples1, samples2]).T
+    assert samples.shape == (n_points, 2)
+
+    mask = jnp.ones_like(samples, dtype=int)
+
+    samples = _var.sample_variances(
+        key=keys[2],
+        values=samples,
+        mask=mask,
+        prior_shape=prior_shape,
+        prior_scale=prior_scale,
+    )
+    assert samples.shape == (2,)
+
+    assert samples[0] == pytest.approx(var1, rel=0.01)
+    assert samples[1] == pytest.approx(var2, rel=0.01)
