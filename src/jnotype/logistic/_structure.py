@@ -1,5 +1,5 @@
 """Sample structure (spike/slab distinction) variables."""
-from typing import cast
+from typing import Union
 
 import jax
 import jax.numpy as jnp
@@ -28,7 +28,10 @@ def _softmax_p1(
     return jax.nn.softmax(concatenated, axis=1)[:, 1]
 
 
-def _logpdf_gaussian(xs: Float[Array, " X"], variance: float) -> Float[Array, " X"]:
+def _logpdf_gaussian(
+    xs: Float[Array, " X"],
+    variance: Union[float, Float[Array, ""]],
+) -> Float[Array, " X"]:
     """Returns :math:`\\log N(x | 0, variance)` vector for `x` in `xs`
     *up to a numerical constant*."""
     log_stds: Float[Array, " X"] = 0.5 * jnp.log(variance)
@@ -124,13 +127,8 @@ def sample_structure(
         log_coef0: Float[Array, " features"] = _logpdf_gaussian(
             coefficients[:, k], variance=pseudoprior_variance
         )
-
-        # It's really an Array of shape (,), but we cast it to float
-        # to make type checker work
-        variance = cast(float, variances[k])
-        # and for the prior with structure turned on:
         log_coef1: Float[Array, " features"] = _logpdf_gaussian(
-            coefficients[:, k], variance=variance
+            coefficients[:, k], variance=variances[k]
         )
 
         # Finally, we have the prior on coefficients, controlled by gamma
@@ -147,3 +145,21 @@ def sample_structure(
         return struct.at[:, k].set(sampled)
 
     return jax.lax.fori_loop(0, K, body_fun, structure)
+
+
+def sample_gamma(
+    key: random.PRNGKeyArray,
+    structure: Int[Array, "G K"],
+    prior_a: float = 1.0,
+    prior_b: float = 1.0,
+) -> Float[Array, ""]:
+    """Samples the constant controlling the
+    prior on the fraction of 1s in the structure matrix.
+    """
+    n_successes = jnp.sum(structure)
+    n_all = structure.shape[0] * structure.shape[1]
+
+    posterior_a = prior_a + n_successes
+    posterior_b = prior_b + (n_all - n_successes)
+
+    return random.beta(key, posterior_a, posterior_b)
