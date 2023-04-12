@@ -123,7 +123,7 @@ def test_sample_structure(
             ax=axs[0],
             vmin=-threshold,
             vmax=threshold,
-            cmap="jet",
+            cmap="seismic",
         )
         sns.heatmap(posterior_mean, ax=axs[1], vmin=0, vmax=1, cmap="jet")
         axs[0].set_title("Difference")
