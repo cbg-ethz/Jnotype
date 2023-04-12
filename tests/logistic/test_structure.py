@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import pytest
 from jax import random
 
 from jnotype.logistic.logreg import calculate_logits
@@ -137,3 +138,54 @@ def test_sample_structure(
 
     # Assert that the number of
     assert (larger + smaller) < 0.05 * equal
+
+
+@pytest.mark.parametrize("n_samples", (1000,))
+@pytest.mark.parametrize("n_ones", (3, 10, 95))
+@pytest.mark.parametrize("prior", [(1.0, 1.0), (3.0, 10.0)])
+def test_sample_gamma(
+    n_samples: int,
+    n_ones: int,
+    prior: tuple[float, float],
+) -> None:
+    """Basic tests for sampling from beta distribution."""
+    alpha, beta = prior
+
+    key = random.PRNGKey(32)
+    subkeys = random.split(key, n_samples)
+
+    structure = jnp.zeros((10, 10), dtype=int)
+
+    n_set = 0
+    for i in range(10):
+        if n_set >= n_ones:
+            break
+        for j in range(10):
+            structure = structure.at[i, j].set(1)
+            n_set += 1
+            if n_set >= n_ones:
+                break
+
+    assert structure.sum() == n_ones
+
+    def aux_sample_gamma(key):
+        """Partial application of `sample_gamma`,
+        so we can get multiple samples by using `vmap`."""
+        return _str.sample_gamma(
+            key=key,
+            structure=structure,
+            prior_a=alpha,
+            prior_b=beta,
+        )
+
+    samples = jax.vmap(aux_sample_gamma)(subkeys)
+    assert len(samples) == n_samples
+
+    # Calculate the analytic variance and mean
+    a = alpha + n_ones
+    b = beta + 10 * 10 - n_ones
+    analytic_mean = a / (a + b)
+    analytic_var = a * b / (a + b) ** 2 / (a + b + 1)
+
+    assert jnp.mean(samples) == pytest.approx(analytic_mean, abs=0.01)
+    assert jnp.var(samples) == pytest.approx(analytic_var, rel=0.05)
