@@ -136,7 +136,7 @@ def test_sample_structure(
         fig.tight_layout()
         fig.savefig(directory / "heatmap.pdf")
 
-    # Assert that the number of
+    # Assert that the number of wrong entries is small
     assert (larger + smaller) < 0.05 * equal
 
 
