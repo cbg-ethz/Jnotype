@@ -29,6 +29,7 @@ def test_sample_binary_codes(
     coefficient_scale: float = 4.0,
     n_gibbs_samples: int = 1_000,
     n_anchor_per_covariate: int = 25,
+    threshold: float = 0.1,
 ) -> None:
     key = random.PRNGKey(seed)
 
@@ -128,8 +129,8 @@ def test_sample_binary_codes(
         sns.heatmap(
             inferred_mean - all_covariates,
             ax=axs[0],
-            vmin=-0.1,
-            vmax=0.1,
+            vmin=-threshold,
+            vmax=threshold,
             cmap="seismic",
         )
         sns.heatmap(inferred_mean, ax=axs[1], vmin=0, vmax=1, cmap="jet")
@@ -148,8 +149,8 @@ def test_sample_binary_codes(
         sns.heatmap(
             inferred_mean[:, :n_binary_codes] - true_codes,
             ax=axs[0],
-            vmin=-0.1,
-            vmax=0.1,
+            vmin=-threshold,
+            vmax=threshold,
             cmap="seismic",
         )
         sns.heatmap(
@@ -175,5 +176,25 @@ def test_sample_binary_codes(
         nptest.assert_allclose(
             inferred_std[:, n_binary_codes:],
             np.zeros_like(all_covariates[:, n_binary_codes:]),
-            atol=0.0001,
+            atol=0.0001,  # atol as we compare with 0
         )
+
+        nptest.assert_allclose(
+            covariates_samples[:, :, n_binary_codes:].min(axis=0),
+            covariates_samples[:, :, n_binary_codes:].max(axis=0),
+            rtol=0.0001,
+        )
+
+    # Check if the sampled binary codes match the truth
+    # note that the generated heatmaps should perfectly be used here
+    approximately_equal = (
+        jnp.abs(inferred_mean[:, :n_binary_codes] - true_codes) <= threshold
+    ).sum()
+    too_low = (inferred_mean[:, :n_binary_codes] < true_codes - threshold).sum()
+    too_large = (inferred_mean[:, :n_binary_codes] > true_codes + threshold).sum()
+
+    assert too_low + too_large < 0.1 * approximately_equal, (
+        f"Approximately equal: {approximately_equal}, "
+        f"too low: {too_low}, "
+        f"too large: {too_large}."
+    )

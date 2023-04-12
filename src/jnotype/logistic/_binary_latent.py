@@ -65,9 +65,15 @@ def sample_binary_codes(
     """
     keys = jax.random.split(key, n_binary_codes)
 
+    # Make sure that the covariates are represented as floats,
+    # even if only binary codes are used
+    covariates = jnp.asarray(covariates, dtype=float)
+
     # This function samples covariates[:, k]
     # Note that k should be 0, ..., n_binary_codes-1, rather than ranging to K-1
-    def body_fun(k: int, covs: Float[Array, "G K"]) -> Float[Array, "G K"]:
+    def body_fun(
+        k: int, covs: Float[Array, "features covariates"]
+    ) -> Float[Array, "features covariates"]:
         """This function samples covs[:, k].
 
         Args:
@@ -82,7 +88,7 @@ def sample_binary_codes(
         log_likelihood0 = calculate_loglikelihood_matrix_from_variables(
             intercepts=intercepts,
             coefficients=coefficients,
-            covariates=covs.at[:, k].set(0),
+            covariates=covs.at[:, k].set(0.0),
             observed=observed,
             structure=structure,
         ).sum(
@@ -93,7 +99,7 @@ def sample_binary_codes(
         log_likelihood1 = calculate_loglikelihood_matrix_from_variables(
             intercepts=intercepts,
             coefficients=coefficients,
-            covariates=covs.at[:, k].set(1),
+            covariates=covs.at[:, k].set(1.0),
             observed=observed,
             structure=structure,
         ).sum(
@@ -101,11 +107,11 @@ def sample_binary_codes(
         )  # We sum along observed features
 
         # Now we need to calculate the terms related to the prior
-        prior_activation_prob: Float[Array, " N"] = labels_to_codes[k, labels]
+        prior_activation_prob: Float[Array, " points"] = labels_to_codes[k, labels]
 
-        # log(prior code[k] = 1), shape (N,)
+        # log(prior code[k] = 1), shape (points,)
         log_prior1 = jnp.log(prior_activation_prob)
-        # log(prior code[k] = 0) = log(1 - prior code[k] = 1), shape (N,)
+        # log(prior code[k] = 0) = log(1 - prior code[k] = 1), shape (points,)
         log_prior0 = jnp.log1p(-prior_activation_prob)
 
         # Now we want to have p1 / (p0 + p1)
