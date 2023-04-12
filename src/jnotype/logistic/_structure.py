@@ -92,9 +92,17 @@ def sample_structure(
     def body_fun(
         k: int, struct: Int[Array, "features covs"]
     ) -> Float[Array, "features covs"]:
-        """Samples all entries of `structure[:, k]` as these
+        """Samples the column of `struct[:, k]` as these
         can be calculated in vectorized fashion (different features
-        have access to different variables)"""
+        have access to different variables).
+
+        Args:
+            k: column to be sampled
+            struct: "local copy" of `structure`, used in functional
+              programming style.
+              Note that `structure` should *not* be used in the function
+              body, but passed as `struct` in the `fori_loop`
+        """
         # log p(Y | variables, structure[:, k] = 0)
         log_likelihood0: Float[
             Array, " features"
