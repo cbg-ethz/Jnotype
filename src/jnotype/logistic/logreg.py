@@ -60,7 +60,7 @@ def calculate_loglikelihood_matrix_from_variables(
     *,
     intercepts: Float[Array, " G"],
     coefficients: Float[Array, "G F"],
-    structure: Float[Array, "G F"],
+    structure: Int[Array, "G F"],
     covariates: Float[Array, "N F"],
     observed: Int[Array, "N G"],
 ) -> Float[Array, "N G"]:
