@@ -316,3 +316,37 @@ def test_augment_matrices() -> None:
             ]
         ),
     )
+
+
+@pytest.mark.parametrize("n_points", [10, 30])
+@pytest.mark.parametrize("n_outputs", [1, 3])
+@pytest.mark.parametrize("n_covariates", [1, 2])
+def test_sample_smoke_test(n_points: int, n_covariates: int, n_outputs: int) -> None:
+    """This is the high-level sampling function, which is composed
+    out of the building blocks above.
+
+    TODO(Pawel): This is just a smoke test, more elaborate tests to follow.
+    """
+    observed = jnp.ones((n_points, n_outputs), dtype=int)
+    intercepts = jnp.zeros(n_outputs)
+    coefficients = jnp.zeros((n_outputs, n_covariates))
+    structure = jnp.ones_like(coefficients, dtype=int)
+    covariates = jnp.ones((n_points, n_covariates))
+    variances = jnp.ones(n_covariates)
+
+    new_intercepts, new_coefficients = pg.sample_intercepts_and_coefficients(
+        jax_key=random.PRNGKey(21),
+        numpy_rng=np.random.default_rng(10),
+        observed=observed,
+        intercepts=intercepts,
+        coefficients=coefficients,
+        structure=structure,
+        covariates=covariates,
+        variances=variances,
+        pseudoprior_variance=0.01,
+        intercept_prior_mean=0,
+        intercept_prior_variance=1.0,
+    )
+
+    assert intercepts.shape == new_intercepts.shape
+    assert coefficients.shape == new_coefficients.shape
