@@ -210,6 +210,7 @@ def _augment_matrices(
 
 
 def sample_intercepts_and_coefficients(
+    *,
     jax_key: random.PRNGKeyArray,
     numpy_rng: np.random.Generator,
     observed: Int[Array, "points features"],

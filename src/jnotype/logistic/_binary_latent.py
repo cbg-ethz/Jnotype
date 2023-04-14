@@ -1,4 +1,6 @@
 """Sample binary latent variables."""
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 from jax import random
@@ -8,6 +10,7 @@ from jnotype.logistic.logreg import calculate_loglikelihood_matrix_from_variable
 from jnotype.logistic._structure import _softmax_p1
 
 
+@partial(jax.jit, static_argnames="n_binary_codes")
 def sample_binary_codes(
     *,
     key: random.PRNGKeyArray,
