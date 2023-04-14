@@ -106,3 +106,103 @@ def test_sample_coefficients_trivial_structure(
         fig.savefig(directory / "coefficient_matrix.pdf")
 
     nptest.assert_allclose(true_coefficients, coefficients_mean, atol=0.1)
+
+
+def test_design_matrix_coding():
+    """Tests whether design matrix augmentation works properly.
+
+    We have n=5 points with k=2 covariates each and three outputs f=3.
+    """
+    intercepts = jnp.asarray([51, 52, 53])
+    structure = jnp.asarray(
+        [
+            [1, 0],
+            [0, 1],
+            [1, 1],
+        ]
+    )
+    coefficients = jnp.asarray(
+        [
+            [0.1, 0.2],
+            [0.3, 0.4],
+            [0.5, 0.6],
+        ]
+    )
+    covariates = jnp.asarray(
+        [
+            [0, 1],
+            [10, 11],
+            [20, 21],
+            [30, 31],
+            [40, 41],
+        ]
+    )
+    intercept_prior_mean = 0.8
+    intercept_prior_variance = 2.0
+    variances = jnp.asarray([5.0, 12.0])
+    pseudoprior_variance = 0.01
+
+    matrices = pg._augment_matrices(
+        intercepts=intercepts,
+        covariates=covariates,
+        coefficients=coefficients,
+        structure=structure,
+        pseudoprior_variance=pseudoprior_variance,
+        variances=variances,
+        intercept_prior_mean=intercept_prior_mean,
+        intercept_prior_variance=intercept_prior_variance,
+    )
+
+    nptest.assert_allclose(
+        matrices["covariates"],
+        jnp.asarray(
+            [
+                [1, 0, 1],
+                [1, 10, 11],
+                [1, 20, 21],
+                [1, 30, 31],
+                [1, 40, 41],
+            ]
+        ),
+    )
+    nptest.assert_allclose(
+        matrices["structure"],
+        jnp.asarray(
+            [
+                [1, 1, 0],
+                [1, 0, 1],
+                [1, 1, 1],
+            ]
+        ),
+    )
+    nptest.assert_allclose(
+        matrices["coefficients"],
+        jnp.asarray(
+            [
+                [51, 0.1, 0.2],
+                [52, 0.3, 0.4],
+                [53, 0.5, 0.6],
+            ]
+        ),
+    )
+    np.asarray(
+        matrices["prior_mean"],
+        jnp.asarray(
+            [
+                [intercept_prior_mean, 0, 0],
+                [intercept_prior_mean, 0, 0],
+                [intercept_prior_mean, 0, 0],
+            ]
+        ),
+    )
+
+    np.asarray(
+        matrices["prior_variance"],
+        jnp.asarray(
+            [
+                [intercept_prior_variance, 5.0, pseudoprior_variance],
+                [intercept_prior_variance, pseudoprior_variance, 12.0],
+                [intercept_prior_variance, 5.0, 12.0],
+            ]
+        ),
+    )
