@@ -27,7 +27,7 @@ class JAXRNG:
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
-def test_sample_coefficients(
+def test_sample_coefficients_trivial_structure(
     save_artifact,
     tmp_path,
     n_features: int,
@@ -36,6 +36,9 @@ def test_sample_coefficients(
     n_covariates: int = 3,
     n_gibbs_steps: int = 1_000,
 ) -> None:
+    """This function tests the `sample_coefficients` function
+    assuming that the structure matrix has only 1s
+    (no sampling from pseudoprior)."""
     key_dataset, key_sampling = random.split(random.PRNGKey(seed))
 
     # Prepare the data set
@@ -49,7 +52,9 @@ def test_sample_coefficients(
     )
     #   random.normal(rng_dataset.key, shape=(n_features, n_covariates))
     logits = pg._calculate_logits(
-        coefficients=true_coefficients, covariates=design_matrix
+        coefficients=true_coefficients,
+        covariates=design_matrix,
+        structure=jnp.ones_like(true_coefficients),
     )
     observed = jnp.asarray(
         random.bernoulli(rng_dataset.key, jax.nn.sigmoid(logits)), dtype=int
@@ -70,6 +75,7 @@ def test_sample_coefficients(
             coefficients_prior_mean=jnp.zeros_like(true_coefficients),
             coefficients_prior_variance=2 * jnp.ones_like(true_coefficients),
             coefficients=current_coefficients,
+            structure=jnp.ones_like(true_coefficients),
         )
         assert current_coefficients.shape == true_coefficients.shape
         all_samples.append(current_coefficients)
