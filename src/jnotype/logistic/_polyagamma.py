@@ -46,6 +46,9 @@ def _sample_coefficients(
         omega,
         covariates,
         structure,
+        # Empirically this seems to be giving 2x speedup
+        # over not specifying
+        optimize="greedy",
     )
     precision_matrices: Float[Array, "features covariates covariates"] = jax.vmap(
         jnp.diag
