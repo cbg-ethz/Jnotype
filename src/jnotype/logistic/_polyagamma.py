@@ -58,7 +58,7 @@ def _sample_coefficients(
 
     # Check if this is right...
     bracket = jnp.einsum("NC,FC,NF->FC", covariates, structure, kappa) + jnp.einsum(
-        "FCK,FK->FC", posterior_covariances, prior_mean
+        "FCK,FK->FC", precision_matrices, prior_mean
     )
     posterior_means: Float[Array, "features covariates"] = jnp.einsum(
         "FCK,FK->FC", posterior_covariances, bracket
