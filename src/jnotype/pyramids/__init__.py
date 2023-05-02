@@ -68,7 +68,7 @@ def single_sampling_step(
         observed=observed,
     )
     t1 = time.time()
-    print(f"Sampling intercepts and coefs: {t1-t0:.2f}")
+    # print(f"Sampling intercepts and coefs: {t1-t0:.2f}")
 
     # Sample structure and the sparsity
     key, subkey_structure, subkey_gamma = random.split(key, 3)
@@ -91,7 +91,7 @@ def single_sampling_step(
     )
 
     t2 = time.time()
-    print(f"Sampling structure: {t2-t1:.2f}")
+    # print(f"Sampling structure: {t2-t1:.2f}")
 
     # Sample prior variances for coefficients
     key, subkey = random.split(key)
@@ -104,7 +104,7 @@ def single_sampling_step(
     )
 
     t3 = time.time()
-    print(f"Sampling variances: {t3-t2:.2f}")
+    # print(f"Sampling variances: {t3-t2:.2f}")
 
     # Sample binary latent variables
     key, subkey = random.split(key)
@@ -121,7 +121,7 @@ def single_sampling_step(
     )
 
     t4 = time.time()
-    print(f"Sampling binary latent variables: {t4-t3:.2f}")
+    # print(f"Sampling binary latent variables: {t4-t3:.2f}")
 
     # --- Sample the Bernoulli mixture model layer ---
     key, subkey = random.split(key)
@@ -136,7 +136,7 @@ def single_sampling_step(
     )
 
     t5 = time.time()
-    print(f"Sampling BMM: {t5-t4:.2f}")
+    # print(f"Sampling BMM: {t5-t4:.2f}")
 
     return {
         "intercepts": intercepts,
@@ -194,7 +194,7 @@ def do_steps(
     n_clusters: int = 4,
     n_points: int = 8_000,
     n_outputs: int = 200,
-    n_covariates: int = 10,
+    n_covariates: int = 20,
     n_binary_codes: int = 5,
     burnin: int = 2,
 ):
