@@ -1,6 +1,6 @@
 """Sampling cluster labels and proportions."""
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -10,6 +10,10 @@ from jaxtyping import Array, Float, Int
 
 import tqdm
 import xarray as xr
+
+import jnotype.sampling as js
+from jnotype.sampling._chunker import DatasetInterface
+from jnotype._utils import JAXRNG
 
 
 def _bernoulli_loglikelihood(
@@ -197,6 +201,88 @@ def single_sampling_step(
     )
 
     return labels, proportions, mixing
+
+
+class BernoulliMixtureGibbsSampler(js.AbstractGibbsSampler):
+    """Gibbs sampler for the Bernoulli mixture model."""
+
+    def __init__(
+        self,
+        datasets: Sequence[DatasetInterface],
+        observed_data,
+        dirichlet_prior,
+        beta_prior,
+        *,
+        jax_rng_key: Optional[jax.random.PRNGKeyArray] = None,
+        warmup: int = 2000,
+        steps: int = 3000,
+        verbose: bool = False,
+    ) -> None:
+        """
+        Args:
+            TODO(Pawel): add descriptions and shapes
+        """
+        super().__init__(datasets, warmup=warmup, steps=steps, verbose=verbose)
+
+        jax_rng_key = jax_rng_key or jax.random.PRNGKey(10)
+        self._rng = JAXRNG(jax_rng_key)
+
+        self._observed_data = observed_data
+        self._dirichlet_prior = dirichlet_prior
+        self._beta_prior = beta_prior
+
+    @property
+    def dimensions(self) -> dict:
+        """Named dimensions of each sample."""
+        return {
+            "labels": ["observation"],
+            "proportions": ["cluster"],
+            "mixing": ["feature", "cluster"],
+        }
+
+    def new_sample(self, sample: dict) -> dict:
+        """A new sample with keys:
+        "labels", "proportions", "mixing".
+        """
+        labels, proportions, mixing = single_sampling_step(
+            key=self._rng.key,
+            observed_data=self._observed_data,
+            proportions=sample["proportions"],
+            mixing=sample["mixing"],
+            dirichlet_prior=self._dirichlet_prior,
+            beta_prior=self._beta_prior,
+        )
+
+        return {
+            "labels": labels,
+            "proportions": proportions,
+            "mixing": mixing,
+        }
+
+    def initialise(self) -> dict:
+        """Initialises the sample. See `dimensions`
+        for description."""
+        n_features = self._observed_data.shape[1]
+        n_clusters = self._dirichlet_prior.shape[0]
+
+        proportions = random.dirichlet(self._rng.key, self._dirichlet_prior)
+        mixing = random.beta(
+            self._rng.key,
+            self._beta_prior[0],
+            self._beta_prior[1],
+            shape=(n_features, n_clusters),
+        )
+        labels = sample_cluster_labels(
+            self._rng.key,
+            cluster_proportions=proportions,
+            mixing=mixing,
+            binary_codes=self._observed_data,
+        )
+        return {
+            "labels": labels,
+            "proportions": proportions,
+            "mixing": mixing,
+        }
 
 
 def _log(msg: str) -> None:
