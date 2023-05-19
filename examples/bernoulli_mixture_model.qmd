@@ -126,14 +126,23 @@ shrinkage_amount = 0.05
 
 key, subkey = jax.random.split(key)
 
-samples = jt.bmm.gibbs_sampler(
-    key=subkey,
+list_dataset = jt.sampling.ListDataset(
+    thinning=5,
+    dimensions=jt.bmm.BernoulliMixtureGibbsSampler.dimensions(),
+)
+
+gibbs_sampler = jt.bmm.BernoulliMixtureGibbsSampler(
+    datasets=[dataset],
     observed_data=input_data,
     dirichlet_prior=jnp.full(n_clusters_upper, shrinkage_amount),
-    thinning=5,
-    n_samples=500,
+    warmup=2000,
+    steps=3000,
     verbose=True,
 )
+
+gibbs_sampler.run()
+
+samples = list_dataset.dataset
 ```
 
 

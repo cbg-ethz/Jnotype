@@ -38,6 +38,7 @@ def _logpdf_gaussian(
     return -0.5 * jnp.square(xs) / variance - log_stds
 
 
+@jax.jit
 def sample_structure(
     *,
     key: random.PRNGKeyArray,
@@ -48,7 +49,7 @@ def sample_structure(
     observed: Int[Array, "points features"],
     variances: Float[Array, " covs"],
     pseudoprior_variance: float,
-    gamma: float,
+    gamma: Union[float, Float[Array, ""]],
 ) -> Int[Array, "features covs"]:
     """We have `covs` covariates (predictors) used
     to model `observed` points with `features` features each
@@ -155,6 +156,7 @@ def sample_structure(
     return jax.lax.fori_loop(0, K, body_fun, structure)
 
 
+@jax.jit
 def sample_gamma(
     key: random.PRNGKeyArray,
     structure: Int[Array, "G K"],

@@ -1,3 +1,6 @@
+import time
+from typing import cast
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -6,7 +9,6 @@ from jax import random
 from jnotype.logistic.logreg import calculate_logits
 import jnotype.logistic._structure as _str
 
-import time
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -118,6 +120,7 @@ def test_sample_structure(
         directory.mkdir()
 
         fig, axs = plt.subplots(1, 3)
+        fig = cast(plt.Figure, fig)
         sns.heatmap(
             posterior_mean - true_structure,
             ax=axs[0],

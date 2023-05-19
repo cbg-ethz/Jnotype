@@ -1,6 +1,5 @@
 """Sampling cluster labels and proportions."""
-import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -8,8 +7,10 @@ import jax.numpy as jnp
 from jax import random
 from jaxtyping import Array, Float, Int
 
-import tqdm
-import xarray as xr
+
+import jnotype.sampling as js
+from jnotype.sampling._chunker import DatasetInterface
+from jnotype._utils import JAXRNG
 
 
 def _bernoulli_loglikelihood(
@@ -199,162 +200,86 @@ def single_sampling_step(
     return labels, proportions, mixing
 
 
-def _log(msg: str) -> None:
-    """TODO(Pawel): Replace with a logger."""
-    print(msg)
+class BernoulliMixtureGibbsSampler(js.AbstractGibbsSampler):
+    """Gibbs sampler for the Bernoulli mixture model."""
 
+    def __init__(
+        self,
+        datasets: Sequence[DatasetInterface],
+        observed_data: Int[Array, "observation feature"],
+        dirichlet_prior: Float[Array, " cluster"],
+        beta_prior: tuple[float, float] = (1.0, 1.0),
+        *,
+        jax_rng_key: Optional[jax.random.PRNGKeyArray] = None,
+        warmup: int = 2000,
+        steps: int = 3000,
+        verbose: bool = False,
+    ) -> None:
+        """
+        Args:
+          observed_data: observed data, shape (n_points, n_features)
+          dirichlet_prior: Dirichlet prior weights
+            on the cluster proportions, shape (n_clusters,)
+          beta_prior: beta prior weights on the mixing matrix entries
+        """
+        super().__init__(datasets, warmup=warmup, steps=steps, verbose=verbose)
 
-def _init_params(
-    key: random.PRNGKeyArray,
-    dirichlet_prior: Float[Array, " B"],
-    beta_prior: tuple[float, float],
-    n_features: int,
-    proportions: Optional[Float[Array, " B"]],
-    mixing: Optional[Float[Array, "K B"]],
-) -> tuple[Float[Array, " B"], Float[Array, "K B"],]:
-    """Samples initial values for the parameters if they have not been defined."""
-    key_prop, key_mixing = random.split(key)
+        jax_rng_key = jax_rng_key or jax.random.PRNGKey(10)
+        self._rng = JAXRNG(jax_rng_key)
 
-    n_clusters = dirichlet_prior.shape[0]
+        self._observed_data = observed_data
+        self._dirichlet_prior = dirichlet_prior
+        self._beta_prior = beta_prior
 
-    sampled_proportions = random.dirichlet(key_prop, dirichlet_prior)
-    sampled_mixing = random.beta(
-        key_mixing, beta_prior[0], beta_prior[1], shape=(n_features, n_clusters)
-    )
+    @classmethod
+    def dimensions(cls) -> dict:
+        """Named dimensions of each sample."""
+        return {
+            "labels": ["observation"],
+            "proportions": ["cluster"],
+            "mixing": ["feature", "cluster"],
+        }
 
-    assert sampled_proportions.shape == (n_clusters,)
-    assert sampled_mixing.shape == (n_features, n_clusters)
-
-    proportions = sampled_proportions if proportions is None else proportions
-    mixing = sampled_mixing if mixing is None else mixing
-
-    assert proportions.shape == (n_clusters,)
-    assert mixing.shape == (n_features, n_clusters)
-
-    return proportions, mixing
-
-
-def _map_storage(dct: dict) -> dict:
-    """Casts to JAX NumPy arrays the values in the dictionary
-    storing a list of samples."""
-    return {key: jnp.asarray(val) for key, val in dct.items()}
-
-
-def gibbs_sampler(
-    *,
-    key: random.PRNGKeyArray,
-    observed_data: Int[Array, "N K"],
-    dirichlet_prior: Float[Array, " B"],
-    beta_prior: tuple[float, float] = (1.0, 1.0),
-    n_samples: int = 5_000,
-    thinning: int = 10,
-    burnin: int = 1_000,
-    proportions: Optional[Float[Array, " B"]] = None,
-    mixing: Optional[Float[Array, "K B"]] = None,
-    verbose: bool = False,
-) -> xr.Dataset:
-    """Gibbs sampler for Bernoulli mixture model.
-
-    Args:
-        key: JAX random key
-        observed_data: observed data, shape (n_points, n_features)
-        dirichlet_prior: Dirichlet prior weights
-          on the cluster proportions, shape (n_clusters,)
-        beta_prior: beta prior weights on the mixing matrix entries
-        n_samples: number of samples to draw
-        thinning: we save a sample every `thinning` steps
-        burnin: number of warm-up steps. These draws are not saved.
-        verbose: whether to log progress
-        proportions: initial starting point for the cluster proportions
-          P(Z). If None, they will be sampled from the prior
-        mixing: initial starting point for the mixing matrix. If None,
-          it will be sampled from the prior
-
-    Returns:
-        xarray's `Dataset` with samples from the posterior
-        TODO(Pawel): Add more elaborate description
-    """
-    key_init, key_burnin, key_sampling = random.split(key, 3)
-
-    proportions, mixing = _init_params(
-        key=key_init,
-        dirichlet_prior=dirichlet_prior,
-        beta_prior=beta_prior,
-        proportions=proportions,
-        mixing=mixing,
-        n_features=observed_data.shape[1],
-    )
-
-    if verbose:
-        _log("Starting the burn-in phase sampling...")
-
-    # Run burn in samples
-    for key in random.split(key_burnin, burnin):
-        _, proportions, mixing = single_sampling_step(
-            key=key,
-            observed_data=observed_data,
-            proportions=proportions,
-            mixing=mixing,
-            dirichlet_prior=dirichlet_prior,
-            beta_prior=beta_prior,
-        )
-
-    if verbose:
-        _log("Burn-in phase finished. Starting proper sampling...")
-
-    t0 = time.time()
-
-    n_steps = thinning * n_samples
-    keys = random.split(key_sampling, n_steps)
-
-    storage = {
-        "labels": [],
-        "proportions": [],
-        "mixing": [],
-    }
-
-    for step, key in tqdm.tqdm(
-        enumerate(keys, 1), total=len(keys), disable=not verbose
-    ):
+    def new_sample(self, sample: dict) -> dict:
+        """A new sample with keys:
+        "labels", "proportions", "mixing".
+        """
         labels, proportions, mixing = single_sampling_step(
-            key=key,
-            observed_data=observed_data,
-            proportions=proportions,
-            mixing=mixing,
-            dirichlet_prior=dirichlet_prior,
-            beta_prior=beta_prior,
+            key=self._rng.key,
+            observed_data=self._observed_data,
+            proportions=sample["proportions"],
+            mixing=sample["mixing"],
+            dirichlet_prior=self._dirichlet_prior,
+            beta_prior=self._beta_prior,
         )
 
-        # Save samples every `thinning` steps
-        if step % thinning == 0:
-            storage["labels"].append(labels)
-            storage["proportions"].append(proportions)
-            storage["mixing"].append(mixing)
+        return {
+            "labels": labels,
+            "proportions": proportions,
+            "mixing": mixing,
+        }
 
-    storage = _map_storage(storage)
-    dataset = xr.Dataset(
-        {
-            "labels": (["sample", "observation"], storage["labels"]),
-            "proportions": (["sample", "cluster"], storage["proportions"]),
-            "mixing": (["sample", "feature", "cluster"], storage["mixing"]),
-        },
-        coords={
-            "sample": (["sample"], jnp.arange(len(storage["labels"]))),
-            "observation": (["observation"], jnp.arange(observed_data.shape[0])),
-            "cluster": (["cluster"], jnp.arange(dirichlet_prior.shape[0])),
-            "feature": (["feature"], jnp.arange(observed_data.shape[1])),
-        },
-        attrs={
-            "description": "Draws from the posterior distribution "
-            "of Bernoulli Mixture Model using Gibbs sampler.",
-            "burnin": burnin,
-            "thinning": thinning,
-            "n_sampling_steps": n_steps,
-            "n_samples": len(storage["labels"]),
-            "beta_prior": beta_prior,
-            "dirichlet_prior": dirichlet_prior,
-            "time": time.time() - t0,
-        },
-    )
+    def initialise(self) -> dict:
+        """Initialises the sample. See `dimensions`
+        for description."""
+        n_features = self._observed_data.shape[1]
+        n_clusters = self._dirichlet_prior.shape[0]
 
-    return dataset
+        proportions = random.dirichlet(self._rng.key, self._dirichlet_prior)
+        mixing = random.beta(
+            self._rng.key,
+            self._beta_prior[0],
+            self._beta_prior[1],
+            shape=(n_features, n_clusters),
+        )
+        labels = sample_cluster_labels(
+            self._rng.key,
+            cluster_proportions=proportions,
+            mixing=mixing,
+            binary_codes=self._observed_data,
+        )
+        return {
+            "labels": labels,
+            "proportions": proportions,
+            "mixing": mixing,
+        }

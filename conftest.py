@@ -3,6 +3,10 @@ import dataclasses
 
 import pytest
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 
 @dataclasses.dataclass
 class TurnOnTestSuiteArgument:
@@ -68,7 +72,7 @@ def pytest_configure(config):
 
 
 @pytest.fixture
-def save_artifact(request):
+def save_artifact(request) -> bool:
     """Boolean fixture representing a CLI flag.
 
     True if generated artifacts should be saved, False if not."""
