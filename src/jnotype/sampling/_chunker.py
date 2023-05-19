@@ -34,7 +34,13 @@ class DatasetInterface(Protocol):
 class ListDataset(DatasetInterface):
     """Appends samples to a list."""
 
-    def __init__(self, thinning: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        dimensions: dict,
+        thinning: Optional[int] = None,
+        attrs: Optional[dict] = None,
+        coords: Optional[dict] = None,
+    ) -> None:
         """
         Args:
             thinning: thinning to be applied
@@ -42,6 +48,9 @@ class ListDataset(DatasetInterface):
         self.thinning = thinning or 1
         self.samples = []
         self.iteration: int = 0
+        self._attrs = attrs or {}
+        self._coords = coords or {}
+        self._dimensions = dimensions
 
     def append_sample(self, sample: dict) -> None:
         """Appends a new sample to the list."""
@@ -55,6 +64,38 @@ class ListDataset(DatasetInterface):
         It is just to make sure the interface
         is implemented."""
         return
+
+    def _coords_for_label(self, label: str) -> list[str]:
+        if label not in self._dimensions:
+            raise ValueError(f"Label {label} does not have dimensions assigned.")
+        return ["sample"] + list(self._dimensions[label])
+
+    def _extract_samples(self, label: str) -> np.ndarray:
+        return np.asarray([item[label] for item in self.samples])
+
+    @property
+    def dataset(self) -> xr.Dataset:
+        attrs = {
+            "thinning": self.thinning,
+        } | self._attrs
+
+        coords = {
+            "sample": np.arange(len(self.samples), dtype=int),
+        } | self._coords
+
+        variables = {
+            label: (
+                self._coords_for_label(label),
+                self._extract_samples(label=label),
+            )
+            for label in self._dimensions.keys()
+        }
+
+        return xr.Dataset(
+            data_vars=variables,
+            coords=coords,
+            attrs=attrs,
+        )
 
 
 class AbstractChunkedDataset(abc.ABC):
