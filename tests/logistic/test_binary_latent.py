@@ -1,4 +1,5 @@
 import time
+from typing import cast
 
 import numpy as np
 import numpy.testing as nptest
@@ -126,6 +127,7 @@ def test_sample_binary_codes(
 
         # All covariates heatmap
         fig, axs = plt.subplots(1, 3)
+        fig = cast(plt.Figure, fig)
         sns.heatmap(
             inferred_mean - all_covariates,
             ax=axs[0],
@@ -146,6 +148,7 @@ def test_sample_binary_codes(
 
         # Binary codes heatmap
         fig, axs = plt.subplots(1, 3)
+        fig = cast(plt.Figure, fig)
         sns.heatmap(
             inferred_mean[:, :n_binary_codes] - true_codes,
             ax=axs[0],

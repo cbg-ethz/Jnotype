@@ -1,4 +1,5 @@
 import time
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -13,17 +14,7 @@ import numpy.testing as nptest
 import pytest
 
 import jnotype.logistic._polyagamma as pg
-
-
-class JAXRNG:
-    def __init__(self, key: random.PRNGKeyArray) -> None:
-        self._key = key
-
-    @property
-    def key(self) -> random.PRNGKeyArray:
-        key, subkey = random.split(self._key)
-        self._key = key
-        return subkey
+from jnotype._utils import JAXRNG
 
 
 @pytest.mark.parametrize("n_features", [1, 2])
@@ -93,6 +84,7 @@ def test_sample_coefficients_trivial_structure(
         directory = tmp_path / "test_sample_coefficients"
         directory.mkdir()
         fig, axs = plt.subplots(1, 3)
+        fig = cast(plt.Figure, fig)
 
         sns.heatmap(true_coefficients, ax=axs[0], cmap="seismic")
         sns.heatmap(coefficients_mean, ax=axs[1], cmap="seismic")
