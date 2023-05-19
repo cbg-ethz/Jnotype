@@ -3,6 +3,10 @@ import dataclasses
 
 import pytest
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 
 @dataclasses.dataclass
 class TurnOnTestSuiteArgument:
