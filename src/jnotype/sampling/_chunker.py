@@ -2,11 +2,59 @@
 import abc
 
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Protocol, Union
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
+
+
+class DatasetInterface(Protocol):
+    """Interface for saving samples.
+
+    One needs to implement:
+
+    append_sample: appends a new sample
+    end: executed at the end of sampling
+    """
+
+    def append_sample(self, sample: dict) -> None:
+        """Adds a new sample to the data set.
+
+        Note:
+            This function *cannot* modify the `sample`.
+        """
+        pass
+
+    def end(self) -> None:
+        """Executed at the end of the sampling."""
+        pass
+
+
+class ListDataset(DatasetInterface):
+    """Appends samples to a list."""
+
+    def __init__(self, thinning: Optional[int] = None) -> None:
+        """
+        Args:
+            thinning: thinning to be applied
+        """
+        self.thinning = thinning or 1
+        self.samples = []
+        self.iteration: int = 0
+
+    def append_sample(self, sample: dict) -> None:
+        """Appends a new sample to the list."""
+        self.iteration += 1
+
+        if self.iteration % self.thinning == 0:
+            self.samples.append(sample)
+
+    def end(self) -> None:
+        """This function does nothing.
+        It is just to make sure the interface
+        is implemented."""
+        return
 
 
 class AbstractChunkedDataset(abc.ABC):
@@ -60,10 +108,7 @@ class AbstractChunkedDataset(abc.ABC):
         raise NotImplementedError
 
     def save(self) -> None:
-        """Can be used to manually save the buffer.
-
-        We recommend running it only once, at the end of the sampling.
-        """
+        """Can be used to manually save the buffer."""
         if not len(self._buffer):
             return
 
@@ -89,6 +134,10 @@ class AbstractChunkedDataset(abc.ABC):
 
         if len(self._buffer) >= self.buffer_size:
             self.save()
+
+    def end(self) -> None:
+        """Executed at the end of the training."""
+        self.save()
 
 
 class XArrayChunkedDataset(AbstractChunkedDataset):

@@ -17,6 +17,7 @@ from jnotype.logistic import (
     sample_binary_codes,
     sample_intercepts_and_coefficients,
 )
+from jnotype._utils import JAXRNG
 from jnotype._variance import sample_variances
 
 
@@ -49,7 +50,9 @@ def single_sampling_step(
     variances_prior_scale: float = 1.0,
     mixing_beta_prior: tuple[float, float] = (1.0, 1.0),
 ) -> dict:
-    t0 = time.time()
+    """Single sampling step of two-layer Bayesian pyramid.
+    To be refactored."""
+    time.time()
 
     # --- Sample the sparse logistic regression layer ---
     # Sample intercepts and coefficients
@@ -67,7 +70,7 @@ def single_sampling_step(
         intercept_prior_variance=intercept_prior_variance,
         observed=observed,
     )
-    t1 = time.time()
+    time.time()
     # print(f"Sampling intercepts and coefs: {t1-t0:.2f}")
 
     # Sample structure and the sparsity
@@ -90,7 +93,7 @@ def single_sampling_step(
         prior_b=gamma_prior_b,
     )
 
-    t2 = time.time()
+    time.time()
     # print(f"Sampling structure: {t2-t1:.2f}")
 
     # Sample prior variances for coefficients
@@ -103,7 +106,7 @@ def single_sampling_step(
         prior_scale=variances_prior_scale,
     )
 
-    t3 = time.time()
+    time.time()
     # print(f"Sampling variances: {t3-t2:.2f}")
 
     # Sample binary latent variables
@@ -120,7 +123,7 @@ def single_sampling_step(
         labels_to_codes=mixing,
     )
 
-    t4 = time.time()
+    time.time()
     # print(f"Sampling binary latent variables: {t4-t3:.2f}")
 
     # --- Sample the Bernoulli mixture model layer ---
@@ -135,7 +138,7 @@ def single_sampling_step(
         beta_prior=mixing_beta_prior,
     )
 
-    t5 = time.time()
+    time.time()
     # print(f"Sampling BMM: {t5-t4:.2f}")
 
     return {
@@ -149,17 +152,6 @@ def single_sampling_step(
         "proportions": proportions,
         "mixing": mixing,
     }
-
-
-class JAXRNG:
-    def __init__(self, key: random.PRNGKeyArray) -> None:
-        self._key = key
-
-    @property
-    def key(self) -> random.PRNGKeyArray:
-        key, subkey = random.split(self._key)
-        self._key = key
-        return subkey
 
 
 def _initialize(
