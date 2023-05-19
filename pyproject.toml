@@ -61,6 +61,9 @@ whitelist-regex = []
 color = true
 
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.pyright]
 include = ["src", "tests"]
 exclude = ["**/node_modules",
