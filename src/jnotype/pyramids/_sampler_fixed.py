@@ -206,11 +206,11 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         """The sites in each sample with annotated dimensions."""
         return {
             "intercepts": ["features"],
-            "coefficients": ["features covariates"],
-            "structure": ["features covariates"],
+            "coefficients": ["features", "latents"],
+            "structure": ["features", "latents"],
             "gamma": [],  # Float, no named dimensions
-            "variances": ["covariates"],
-            "covariates": ["points", "covariates"],
+            "variances": ["latents"],
+            "covariates": ["points", "latents"],
             "cluster_labels": ["points"],
             "proportions": ["clusters"],
             "mixing": ["latent_codes", "clusters"],
@@ -246,13 +246,11 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
 
     def _initialise_intercepts(self) -> Float[Array, " covariates"]:
         """Initializes the intercepts."""
-        # TODO(Pawel): This will need to be updated, when we allow
-        #   observation-specific covariates.
-        n_covariates = self._n_binary_codes
+        n_outputs = self._observed_data.shape[1]
 
         mean = self._intercept_prior_mean
         std = np.sqrt(self._intercept_prior_variance)
-        normal_noise = jax.random.normal(self._jax_rng.key, shape=(n_covariates,))
+        normal_noise = jax.random.normal(self._jax_rng.key, shape=(n_outputs,))
         return mean + std * normal_noise
 
     def _initialise_gamma(self) -> Float[Array, ""]:
@@ -278,9 +276,8 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
             # TODO(Pawel): This doesn't really work this way:
             #   some coefficients should be sampled from pseudoprior
             #   and the others should be sampled from the prior
-            "coefficients": jax.random.normal(
-                self._jax_rng.key, shape=(n_outputs, n_covariates)
-            ),
+            "coefficients": jnp.sqrt(self._pseudoprior_variance)
+            * jax.random.normal(self._jax_rng.key, shape=(n_outputs, n_covariates)),
             "structure": jax.random.bernoulli(
                 self._jax_rng.key, p=gamma, shape=(n_outputs, n_covariates)
             ),
@@ -298,7 +295,7 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
             ),
             "proportions": jnp.full(fill_value=1.0 / n_clusters, shape=(n_clusters,)),
             "mixing": jax.random.beta(
-                self._jax_rng,
+                self._jax_rng.key,
                 a=self._mixing_beta_prior[0],
                 b=self._mixing_beta_prior[1],
                 shape=(n_binary_codes, n_clusters),
