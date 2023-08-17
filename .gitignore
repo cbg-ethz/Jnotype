@@ -1,5 +1,7 @@
 # Data files
 data/
+generated/
+*.snakemake/
 
 *.zip
 *.tar.*
@@ -11,7 +13,6 @@ data/
 *.json
 *.npy
 *.npz
-
 
 # Notebooks
 *.ipynb
