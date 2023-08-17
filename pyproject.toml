@@ -18,6 +18,10 @@ arviz = "^0.15.1"
 xarray = "^2023.3.0"
 tqdm = "^4.65.0"
 
+
+[tool.poetry.group.dev]
+optional = true
+
 [tool.poetry.group.dev.dependencies]
 interrogate = "^1.5.0"
 ruff = "^0.0.253"
