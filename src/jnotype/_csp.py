@@ -174,4 +174,46 @@ def log_pdf_multivariate_normal(
 
 
 # ----- Indicator variables -----
-# TODO(Pawel): Add
+
+
+def calculate_indicator_logits(
+    coefficients: Float[Array, "features codes"],
+    structure: Int[Array, "features codes"],
+    omega: Float[Array, " values"],
+    a: float = 2.0,
+    b: float = 1.0,
+    theta_inf: float = 0.01,
+) -> Float[Array, "codes values"]:
+    """Calculates log-probabilities
+    of the indicators.
+
+    Args:
+        coefficients: shape (coefficients, traits)
+        structure: shape (coefficients, traits)
+        omega: shape (traits,)
+        a: parameter of inverse gamma prior
+        b: parameter of inverse gamma prior
+        theta_inf: vanishing variance
+
+    Returns:
+        logits, shape (codes, values).
+          It should be used to sample (codes,)
+          vector with logprobabilities of (values,)
+    """
+    n_codes, n_values = coefficients.shape[1], coefficients.shape[1]
+
+    coefficients_normal = jax.vmap(log_pdf_multivariate_normal, in_axes=(1, 1, None))(
+        coefficients, structure, jnp.asarray(theta_inf)
+    )
+
+    coefficients_t = jax.vmap(log_pdf_multivariate_t_cusp, in_axes=(1, 1, None, None))(
+        coefficients, structure, jnp.asarray(a), jnp.asarray(b)
+    )
+
+    mask = jnp.less_equal(jnp.arange(n_values), jnp.arange(n_codes)[:, jnp.newaxis])
+    normal_2d = jnp.expand_dims(coefficients_normal, axis=-1)
+    student_2d = jnp.expand_dims(coefficients_t, axis=-1)
+    semilogits = jnp.where(mask, normal_2d, student_2d)  # Shape (codes, values)
+
+    # Now we need to add log(omegas)
+    return semilogits + jnp.log(omega)[None, :]

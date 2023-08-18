@@ -171,3 +171,101 @@ def test_multivariate_normal(multiple: float, k: int, sparsity: float) -> None:
     assert log_pdf_multivariate_normal(x, mask, multiple=multiple) == pytest.approx(
         csp.log_pdf_multivariate_normal(x=x, mask=mask, multiple=multiple)
     )
+
+
+# ----- Tests of the indicators -----
+
+
+def calculate_indicator_logits_naive(
+    coefficients: np.ndarray,
+    structure: np.ndarray,
+    omega: np.ndarray,
+    a: float = 2.0,
+    b: float = 1.0,
+    theta_inf: float = 0.01,
+) -> np.ndarray:
+    """Calculates log-probabilities
+    of the indicators.
+
+    Args:
+        coefficients: shape (coefficients, traits)
+        structure: shape (coefficients, traits)
+        omega: shape (traits,)
+        a: parameter of inverse gamma prior
+        b: parameter of inverse gamma prior
+        theta_inf: vanishing variance
+
+    Returns:
+        logits, shape (codes, values).
+          It should be used to sample (codes,)
+          vector with logprobabilities of (values,)
+    """
+    n_codes = coefficients.shape[1]
+    n_values = n_codes
+
+    ret = np.zeros((n_codes, n_values), dtype=float)
+    log_omega = np.log(omega)
+    assert log_omega.shape == (n_values,)
+
+    for code in range(n_codes):
+        for val in range(n_values):
+            if val <= code:  # Normal
+                ret[code, val] = (
+                    csp.log_pdf_multivariate_normal(
+                        x=coefficients[:, code],
+                        mask=structure[:, code],
+                        multiple=theta_inf,
+                    )
+                    + log_omega[val]
+                )
+            else:  # Student
+                ret[code, val] = (
+                    csp.log_pdf_multivariate_t_cusp(
+                        x=coefficients[:, code],
+                        mask=structure[:, code],
+                        a=a,
+                        b=b,
+                    )
+                    + log_omega[val]
+                )
+    return ret
+
+
+@pytest.mark.parametrize("n_features", (10, 100))
+@pytest.mark.parametrize("n_codes", (3, 10))
+def test_calculate_indicator_logits(
+    n_features: int,
+    n_codes: int,
+    prob: float = 0.5,
+    a: float = 1.0,
+    b: float = 2.0,
+    theta_inf: float = 0.01,
+) -> None:
+    key = random.PRNGKey(123)
+    key, *subkeys = random.split(key, 4)
+
+    nu = csp.sample_prior_nu(subkeys[0], alpha=1.0, h=n_codes)
+    omega = csp.calculate_omega(nu)
+
+    coefficients = random.normal(subkeys[1], shape=(n_features, n_codes))
+    structure = random.bernoulli(subkeys[2], p=prob, shape=(n_features, n_codes))
+
+    logits = csp.calculate_indicator_logits(
+        coefficients=coefficients,
+        structure=structure,
+        omega=omega,
+        a=a,
+        b=b,
+        theta_inf=theta_inf,
+    )
+
+    logits_ = calculate_indicator_logits_naive(
+        coefficients=coefficients,
+        structure=structure,
+        omega=omega,
+        a=a,
+        b=b,
+        theta_inf=theta_inf,
+    )
+
+    nptest.assert_allclose(logits, logits_, atol=1e-2)
