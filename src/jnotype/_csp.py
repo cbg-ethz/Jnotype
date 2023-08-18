@@ -6,6 +6,8 @@ from jax import random
 
 from jaxtyping import Float, Int, Array
 
+from jnotype._variance import sample_variances, sample_inverse_gamma
+
 # ----- Beta variables -----
 
 
@@ -217,3 +219,136 @@ def calculate_indicator_logits(
 
     # Now we need to add log(omegas)
     return semilogits + jnp.log(omega)[None, :]
+
+
+def sample_indicators(
+    key,
+    logits: Float[Array, "codes values"],
+) -> Int[Array, " codes"]:
+    """Samples the latent indicator variables.
+
+    Args:
+        logits, shape (codes, values)
+
+    Returns:
+        indicators, shape (codes,).
+          Each entry is in {0, 1, ..., values-1}
+    """
+    return random.categorical(key, logits, axis=1)
+
+
+# ----- Sampling variances -----
+
+
+def _select_variances_active(
+    indicators: Int[Array, " codes"],
+    variances_active: Float[Array, " codes"],
+    theta_inf: float,
+) -> Float[Array, " codes"]:
+    variances_inactive = jnp.full(shape=variances_active.shape, fill_value=theta_inf)
+    # If zs[h] <= h, the feature is inactive. Otherwise, it is active.
+    inactive = jnp.less_equal(indicators, jnp.arange(indicators.shape[0]))
+    return jnp.where(inactive, variances_inactive, variances_active)
+
+
+def _sample_variances_conditioned_on_indicators(
+    key,
+    indicators: Int[Array, " codes"],
+    coefficients: Float[Array, "features codes"],
+    structure: Int[Array, "features codes"],
+    prior_shape: float,
+    prior_scale: float,
+    theta_inf: float,
+) -> Float[Array, " codes"]:
+    variances_active = sample_variances(
+        key,
+        values=coefficients,
+        mask=structure,
+        prior_shape=prior_shape,
+        prior_scale=prior_scale,
+    )
+
+    return _select_variances_active(
+        indicators=indicators,
+        variances_active=variances_active,
+        theta_inf=theta_inf,
+    )
+
+
+def sample_csp_prior(
+    key,
+    k: int,
+    expected_occupied: float,
+    prior_shape: float = 2.0,
+    prior_scale: float = 1.0,
+    theta_inf: float = 1e-2,
+) -> dict:
+    """One sample from the prior to initialize."""
+    key_nu, key_indicators, key_var = random.split(key, 3)
+    nus = sample_prior_nu(key_nu, alpha=expected_occupied, h=k)
+    omega = calculate_omega(nus)
+    indicators = random.categorical(key_indicators, jnp.log(omega), shape=(k,))
+
+    variances_active = sample_inverse_gamma(
+        key=key_var,
+        n_points=k,
+        a=prior_shape,
+        b=prior_scale,
+    )
+
+    variance = _select_variances_active(
+        indicators=indicators,
+        variances_active=variances_active,
+        theta_inf=theta_inf,
+    )
+
+    return {
+        "variance": variance,
+        "nu": nus,
+        "omega": omega,
+        "indicators": indicators,
+    }
+
+
+def sample_csp_gibbs(
+    key,
+    coefficients: Float[Array, "features codes"],
+    structure: Int[Array, "features codes"],
+    omega: Float[Array, " codes"],
+    expected_occupied: float,
+    prior_shape: float = 2.0,
+    prior_scale: float = 1.0,
+    theta_inf: float = 1e-2,
+) -> dict:
+    """One sample from the posterior."""
+    key_indicator, key_nu, key_var = random.split(key, 3)
+
+    logits = calculate_indicator_logits(
+        coefficients=coefficients,
+        structure=structure,
+        omega=omega,
+        a=prior_shape,
+        b=prior_scale,
+        theta_inf=theta_inf,
+    )
+    indicators = sample_indicators(key_indicator, logits)
+
+    nus = sample_posterior_nu(key_nu, zs=indicators, alpha=expected_occupied)
+    omega = calculate_omega(nus)
+
+    variance = _sample_variances_conditioned_on_indicators(
+        key_var,
+        indicators=indicators,
+        coefficients=coefficients,
+        structure=structure,
+        prior_shape=prior_shape,
+        prior_scale=prior_scale,
+        theta_inf=theta_inf,
+    )
+
+    return {
+        "variance": variance,
+        "nu": nus,
+        "omega": omega,
+        "indicators": indicators,
+    }

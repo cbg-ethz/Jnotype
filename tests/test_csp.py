@@ -269,3 +269,85 @@ def test_calculate_indicator_logits(
     )
 
     nptest.assert_allclose(logits, logits_, atol=1e-2)
+
+
+@pytest.mark.parametrize("k", [2, 5, 10])
+@pytest.mark.parametrize("theta_inf", [0.01, 0.1, 1.0])
+def test_select_variances_active(k: int, theta_inf: float) -> None:
+    key = random.PRNGKey(512)
+    key, *subkeys = random.split(key, 3)
+
+    indicators = random.categorical(subkeys[0], jnp.zeros((k, k)), axis=1)
+    variances_active = jnp.square(random.normal(subkeys[1], shape=(k,)))
+
+    variances = []
+    for i, (ind, v) in enumerate(zip(indicators, variances_active)):
+        if ind <= i:
+            variances.append(theta_inf)
+        else:
+            variances.append(v)
+    variances = jnp.asarray(variances)
+
+    nptest.assert_allclose(
+        variances,
+        csp._select_variances_active(
+            indicators=indicators,
+            variances_active=variances_active,
+            theta_inf=theta_inf,
+        ),
+    )
+
+
+# ----- Sampling from the prior and from the posterior -----
+@pytest.mark.parametrize("k", [5, 10])
+def test_sample_csp_prior(
+    k: int,
+) -> None:
+    key = random.PRNGKey(512)
+    sample = csp.sample_csp_prior(
+        key,
+        k=k,
+        expected_occupied=2.0,
+        prior_shape=2.0,
+        prior_scale=4.0,
+        theta_inf=0.01,
+    )
+
+    assert sample["nu"].shape == (k,)
+    assert sample["variance"].shape == (k,)
+    assert sample["indicators"].shape == (k,)
+    assert jnp.min(sample["indicators"]) >= 0
+    assert jnp.max(sample["indicators"]) < k
+    nptest.assert_allclose(sample["omega"], csp.calculate_omega(sample["nu"]))
+
+
+@pytest.mark.parametrize("k", [5, 10])
+def test_sample_csp_gibbs(
+    k: int,
+    features: int = 100,
+) -> None:
+    key = random.PRNGKey(512)
+    key, *subkeys = random.split(key, 4)
+    initial = csp.sample_csp_prior(
+        key=subkeys[0],
+        k=k,
+        expected_occupied=2.0,
+        prior_shape=2.0,
+        prior_scale=4.0,
+        theta_inf=0.01,
+    )
+
+    sample = csp.sample_csp_gibbs(
+        key=subkeys[1],
+        coefficients=random.normal(key=subkeys[2], shape=(features, k)),
+        structure=jnp.ones((features, k), dtype=bool),
+        omega=initial["omega"],
+        expected_occupied=2.0,
+        prior_shape=2.0,
+        prior_scale=4.0,
+        theta_inf=0.01,
+    )
+
+    assert set(sample.keys()) == set(initial.keys())
+    for k in sample.keys():
+        assert sample[k].shape == initial[k].shape

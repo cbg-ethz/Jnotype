@@ -76,3 +76,22 @@ def test_infinite_data(
 
     assert samples[0] == pytest.approx(var1, rel=0.01)
     assert samples[1] == pytest.approx(var2, rel=0.01)
+
+
+@pytest.mark.parametrize("n_samples", (50_000,))
+@pytest.mark.parametrize("shape", (7.0, 4.0))
+@pytest.mark.parametrize("scale", (5.0, 2.0))
+def test_sample_inverse_gamma(n_samples: int, shape: float, scale: float) -> None:
+    key = random.PRNGKey(42)
+
+    samples = _var.sample_inverse_gamma(
+        key=key,
+        n_points=n_samples,
+        a=shape,
+        b=scale,
+    )
+
+    assert jnp.mean(samples) == pytest.approx(scale / (shape - 1), rel=0.01)
+    assert jnp.var(samples) == pytest.approx(
+        scale**2 / ((shape - 1) ** 2 * (shape - 2)), abs=0.01
+    )
