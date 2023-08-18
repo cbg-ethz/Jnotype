@@ -12,6 +12,8 @@ import pytest
 
 import jnotype._csp as csp
 
+# ----- Calculating nu, omega, and shrinking probabilities from prior -----
+
 
 def calculate_omega_slow(nu: jnp.ndarray) -> jnp.ndarray:
     ret = np.asarray(nu, dtype=float)
@@ -77,6 +79,40 @@ def test_expected_number_of_active_components(
 
         fig.tight_layout()
         fig.savefig(tmp_path / f"test_csp-{h}-{alpha}.pdf")
+
+
+# ----- Sampling nus from posterior ------
+def calculate_nu_coefficients(
+    zs: jnp.ndarray, alpha: float
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    K = len(zs)
+    coeffs1 = np.ones(K - 1, dtype=float)
+    coeffs2 = np.full(shape=coeffs1.shape, fill_value=alpha, dtype=float)
+
+    for label in range(K - 1):
+        for z in zs:
+            if z == label:
+                coeffs1[label] += 1.0
+            if z > label:
+                coeffs2[label] += 1.0
+    return coeffs1, coeffs2
+
+
+@pytest.mark.parametrize("k", [3, 5, 10])
+@pytest.mark.parametrize("alpha", [0.5, 1.0, 2.0])
+def test_calculate_nu_coefficients(k: int, alpha: float) -> None:
+    # Generate random zs
+    key = random.PRNGKey(123)
+    zs = random.randint(key, shape=(k,), minval=0, maxval=k)
+
+    coefs1, coefs2 = csp._calculate_nu_posterior_coefficients(zs, alpha)
+    coefs1_slow, coefs2_slow = calculate_nu_coefficients(zs, alpha)
+
+    nptest.assert_allclose(coefs1, coefs1_slow)
+    nptest.assert_allclose(coefs2, coefs2_slow)
+
+
+# ----- Evaluation of log-probabilities -----
 
 
 def log_pdf_multivariate_t(x, mask, *, dof: float, multiple: float) -> float:

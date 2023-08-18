@@ -1,7 +1,8 @@
 """Cumulative shrinkage prior."""
-from jax import random
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
+from jax import random
 
 from jaxtyping import Float, Int, Array
 
@@ -24,6 +25,48 @@ def sample_prior_nu(key, alpha: float, h: int) -> Float[Array, " h"]:
     return nu.at[h - 1].set(1.0)
 
 
+def _calculate_nu_posterior_coefficients(
+    zs: jnp.ndarray, alpha: float
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    K = zs.shape[0]
+    coeffs1 = jnp.ones(K - 1, dtype=float)
+    coeffs2 = jnp.full(shape=coeffs1.shape, fill_value=alpha, dtype=coeffs1.dtype)
+
+    def body_fun(carry, z):
+        coeffs1, coeffs2 = carry
+        lt_mask = jnp.arange(K - 1) < z
+        eq_mask = jnp.arange(K - 1) == z
+        coeffs1 = coeffs1 + eq_mask
+        coeffs2 = coeffs2 + lt_mask
+        return (coeffs1, coeffs2), ()
+
+    (coeffs1, coeffs2), _ = jax.lax.scan(body_fun, (coeffs1, coeffs2), zs)
+    return coeffs1, coeffs2
+
+
+def sample_posterior_nu(
+    key, zs: Float[Array, " K"], alpha: float
+) -> Float[Array, " K"]:
+    """Samples beta variables from the posterior,
+    conditioned on the latent indicators.
+
+    Args:
+        zs: latent indicators, shape (K,)
+          with values {0, 1, ..., K-1}
+        alpha: sparsity parameter
+
+    Returns:
+        array of length `K` with sampled `nu` vector.
+          The last entry set to 1.0,
+    """
+    coeffs1, coeffs2 = _calculate_nu_posterior_coefficients(zs, alpha)
+    nus = random.beta(key, coeffs1, coeffs2)
+    return jnp.append(nus, 1.0)
+
+
+# ----- Omega variables -----
+
+
 def calculate_omega(nu: Float[Array, " h"]) -> Float[Array, " h"]:
     """Calculates weights from beta variables, in a stick-breaking fashion.
 
@@ -35,6 +78,9 @@ def calculate_omega(nu: Float[Array, " h"]) -> Float[Array, " h"]:
     # For l = 0 we have just 1
     prods = jnp.concatenate([one, jnp.cumprod(1 - nu)[:-1]])
     return nu * prods
+
+
+# ----- Shrinking probabilities -----
 
 
 def calculate_pi_from_omega(omega: Float[Array, " h"]) -> Float[Array, " h"]:
@@ -125,3 +171,7 @@ def log_pdf_multivariate_normal(
     quadratic_form = -0.5 * jnp.sum(jnp.square(x * mask)) / multiple
     log_else = -0.5 * p * jnp.log(multiple * 2 * jnp.pi)
     return quadratic_form + log_else
+
+
+# ----- Indicator variables -----
+# TODO(Pawel): Add
