@@ -5,9 +5,11 @@ import jax.scipy as jsp
 
 from jaxtyping import Float, Int, Array
 
+# ----- Beta variables -----
 
-def prior_nu(key, alpha: float, h: int) -> Float[Array, " h"]:
-    """Samples beta variables.
+
+def sample_prior_nu(key, alpha: float, h: int) -> Float[Array, " h"]:
+    """Samples beta variables from the prior.
 
     Args:
         key: random key
@@ -110,3 +112,16 @@ def log_pdf_multivariate_t_cusp(
         dof=2 * a,
         multiple=b / a,
     )
+
+
+def log_pdf_multivariate_normal(
+    x: Float[Array, " K"],
+    mask: Int[Array, " K"],
+    multiple: float,
+) -> float:
+    """Evaluates the log-PDF of the multivariate normal distribution
+    at `x[mask]`."""
+    p = jnp.sum(mask)  # The effective dimension
+    quadratic_form = -0.5 * jnp.sum(jnp.square(x * mask)) / multiple
+    log_else = -0.5 * p * jnp.log(multiple * 2 * jnp.pi)
+    return quadratic_form + log_else

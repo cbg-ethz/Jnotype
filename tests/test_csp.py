@@ -26,7 +26,7 @@ def calculate_omega_slow(nu: jnp.ndarray) -> jnp.ndarray:
 @pytest.mark.parametrize("alpha", [0.5, 1.0, 2.0])
 def test_calculate_omega(alpha: float, h: int) -> None:
     key = jax.random.PRNGKey(0)
-    nu = csp.prior_nu(key, alpha=alpha, h=h)
+    nu = csp.sample_prior_nu(key, alpha=alpha, h=h)
     omega = csp.calculate_omega(nu)
     omega_slow = calculate_omega_slow(nu)
     nptest.assert_allclose(omega, omega_slow, atol=1e-4)
@@ -44,7 +44,7 @@ def test_expected_number_of_active_components(
     key = random.PRNGKey(123)
     subkeys = random.split(key, draws)
 
-    nus = jax.vmap(csp.prior_nu, in_axes=(0, None, None))(subkeys, alpha, h)
+    nus = jax.vmap(csp.sample_prior_nu, in_axes=(0, None, None))(subkeys, alpha, h)
     pis = jax.vmap(csp.calculate_pi_from_nu)(nus)
     ks = jax.vmap(csp.calculate_expected_active_from_pi)(pis)
 
@@ -81,7 +81,7 @@ def test_expected_number_of_active_components(
 
 def log_pdf_multivariate_t(x, mask, *, dof: float, multiple: float) -> float:
     x = np.asarray(x)
-    mask = np.asarray(mask)
+    mask = np.asarray(mask, dtype=bool)
     y = x[mask]
     dim = len(y)
 
@@ -91,9 +91,9 @@ def log_pdf_multivariate_t(x, mask, *, dof: float, multiple: float) -> float:
 
 
 @pytest.mark.parametrize("dof", [1, 2, 5])
-@pytest.mark.parametrize("multiple", [0.1, 1.0, 2.0, 5.0])
-@pytest.mark.parametrize("k", [10, 30])
-@pytest.mark.parametrize("sparsity", [0.1, 0.5, 0.9])
+@pytest.mark.parametrize("multiple", [0.1, 1.0, 2.0])
+@pytest.mark.parametrize("k", [1, 5, 30])
+@pytest.mark.parametrize("sparsity", [0.1, 0.5])
 def test_multivariate_student(
     dof: float, multiple: float, k: int, sparsity: float
 ) -> None:
@@ -107,4 +107,31 @@ def test_multivariate_student(
 
     assert log_pdf_multivariate_t(x, mask, dof=dof, multiple=multiple) == pytest.approx(
         csp._log_pdf_multivariate_t(x=x, mask=mask, dof=dof, multiple=multiple)
+    )
+
+
+def log_pdf_multivariate_normal(x, mask, multiple) -> float:
+    x = np.asarray(x)
+    mask = np.asarray(mask, dtype=bool)
+    y = x[mask]
+    dim = len(y)
+    return stats.multivariate_normal.logpdf(
+        y, mean=np.zeros(dim), cov=multiple * np.eye(dim)
+    )
+
+
+@pytest.mark.parametrize("multiple", [0.1, 1.0, 2.0, 5.0])
+@pytest.mark.parametrize("k", [1, 10, 30])
+@pytest.mark.parametrize("sparsity", [0.1, 0.5])
+def test_multivariate_normal(multiple: float, k: int, sparsity: float) -> None:
+    key = random.PRNGKey(256)
+    key, *subkeys = random.split(key, 3)
+
+    x = random.normal(subkeys[0], shape=(k,))
+    mask = random.bernoulli(subkeys[1], p=sparsity, shape=(k,))
+    if mask.sum() == 0:
+        mask = mask.at[0].set(True)
+
+    assert log_pdf_multivariate_normal(x, mask, multiple=multiple) == pytest.approx(
+        csp.log_pdf_multivariate_normal(x=x, mask=mask, multiple=multiple)
     )
