@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "jnotype", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.9,<3.13"
 numpy = "^1.24.2"
 jaxtyping = "^0.2.14"
 jax = "^0.4.6"
@@ -32,6 +32,7 @@ pre-commit = "^3.1.0"
 pyright = "^1.1.296"
 seaborn = "^0.12.2"
 matplotlib = "^3.7.1"
+scipy = "^1.11.2"
 
 [build-system]
 requires = ["poetry-core"]

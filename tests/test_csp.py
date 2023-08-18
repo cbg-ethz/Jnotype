@@ -6,6 +6,7 @@ from jax import random
 import numpy as np
 import numpy.testing as nptest
 import matplotlib.pyplot as plt
+from scipy import stats
 
 import pytest
 
@@ -76,3 +77,34 @@ def test_expected_number_of_active_components(
 
         fig.tight_layout()
         fig.savefig(tmp_path / f"test_csp-{h}-{alpha}.pdf")
+
+
+def log_pdf_multivariate_t(x, mask, *, dof: float, multiple: float) -> float:
+    x = np.asarray(x)
+    mask = np.asarray(mask)
+    y = x[mask]
+    dim = len(y)
+
+    return stats.multivariate_t.logpdf(
+        y, loc=np.zeros(dim), shape=multiple * np.eye(dim), df=dof
+    )
+
+
+@pytest.mark.parametrize("dof", [1, 2, 5])
+@pytest.mark.parametrize("multiple", [0.1, 1.0, 2.0, 5.0])
+@pytest.mark.parametrize("k", [10, 30])
+@pytest.mark.parametrize("sparsity", [0.1, 0.5, 0.9])
+def test_multivariate_student(
+    dof: float, multiple: float, k: int, sparsity: float
+) -> None:
+    key = random.PRNGKey(123)
+    key, *subkeys = random.split(key, 3)
+
+    x = random.normal(subkeys[0], shape=(k,))
+    mask = random.bernoulli(subkeys[1], p=sparsity, shape=(k,))
+    if mask.sum() == 0:
+        mask = mask.at[0].set(True)
+
+    assert log_pdf_multivariate_t(x, mask, dof=dof, multiple=multiple) == pytest.approx(
+        csp._log_pdf_multivariate_t(x=x, mask=mask, dof=dof, multiple=multiple)
+    )
