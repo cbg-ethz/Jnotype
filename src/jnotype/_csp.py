@@ -251,6 +251,12 @@ def _select_variances_active(
     return jnp.where(inactive, variances_inactive, variances_active)
 
 
+def compute_active_traits(indicators: Int[Array, " codes"]) -> Int[Array, " codes"]:
+    """Annotates with 1 which traits are active."""
+    active = jnp.greater(indicators, jnp.arange(indicators.shape[0]))
+    return jnp.asarray(active, dtype=int)
+
+
 def _sample_variances_conditioned_on_indicators(
     key,
     indicators: Int[Array, " codes"],
@@ -307,6 +313,8 @@ def sample_csp_prior(
         "nu": nus,
         "omega": omega,
         "indicators": indicators,
+        "active_traits": compute_active_traits(indicators),
+        "n_active": jnp.sum(compute_active_traits(indicators)),
     }
 
 
@@ -351,4 +359,6 @@ def sample_csp_gibbs(
         "nu": nus,
         "omega": omega,
         "indicators": indicators,
+        "active_traits": compute_active_traits(indicators),
+        "n_active": jnp.sum(compute_active_traits(indicators)),
     }
