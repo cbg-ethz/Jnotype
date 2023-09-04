@@ -173,3 +173,22 @@ def sample_gamma(
     posterior_b = prior_b + (n_all - n_successes)
 
     return random.beta(key, posterior_a, posterior_b)
+
+
+@jax.jit
+def sample_gamma_individual(
+    key: random.PRNGKeyArray,
+    structure: Int[Array, "G K"],
+    prior_a: Float[Array, " K"],
+    prior_b: Float[Array, " K"],
+) -> Float[Array, " K"]:
+    """Samples the sparsity basing on the structure matrix,
+    but for each covariate separately.
+    """
+    n_successes = jnp.sum(structure, axis=0)
+    n_all = structure.shape[0]
+
+    posterior_a = prior_a + n_successes
+    posterior_b = prior_b + (n_all - n_successes)
+
+    return random.beta(key, posterior_a, posterior_b)
