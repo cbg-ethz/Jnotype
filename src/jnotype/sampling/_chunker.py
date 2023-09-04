@@ -83,6 +83,9 @@ class ListDataset(DatasetInterface):
             "sample": np.arange(len(self.samples), dtype=int),
         } | self._coords
 
+        if not len(self.samples):
+            return xr.Dataset(coords=coords, attrs=attrs)
+
         variables = {
             label: (
                 self._coords_for_label(label),
