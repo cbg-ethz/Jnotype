@@ -372,8 +372,9 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         nu = self._initialise_nu()
 
         initial_binary_codes = jnp.asarray(
+            # TODO(Pawel): There could be a better way to initialize binary codes
             jax.random.bernoulli(
-                self._jax_rng.key, p=gamma, shape=(n_points, self._n_binary_codes)
+                self._jax_rng.key, p=0.1, shape=(n_points, self._n_binary_codes)
             ),
             dtype=float,
         )
