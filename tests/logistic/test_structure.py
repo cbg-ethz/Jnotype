@@ -94,7 +94,7 @@ def test_sample_structure(
             observed=observed,
             variances=variances,
             pseudoprior_variance=pseudoprior,
-            gamma=gamma,
+            gamma=jnp.full_like(variances, fill_value=gamma),
         )
         samples.append(structure)
 

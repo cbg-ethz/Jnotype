@@ -49,7 +49,7 @@ def sample_structure(
     observed: Int[Array, "points features"],
     variances: Float[Array, " covs"],
     pseudoprior_variance: float,
-    gamma: Union[float, Float[Array, ""]],
+    gamma: Float[Array, " covs"],
 ) -> Int[Array, "features covs"]:
     """We have `covs` covariates (predictors) used
     to model `observed` points with `features` features each
@@ -80,9 +80,9 @@ def sample_structure(
           part of the prior. However, we sample from pseudoprior,
           the coefficient is turned off and contribution to the likelihood
           is exactly zero)
-        gamma: probability of an individual entry to be turned on.
+        gamma: probability of an individual entry to be turned on for each covariate
           Controls the sparsity (values near 0 result in a prior to
-          be a very sparse matrix)
+          be a very sparse coefficient vectors for a given covariate)
     """
     K = coefficients.shape[-1]
     keys = jax.random.split(key, K)
@@ -141,8 +141,8 @@ def sample_structure(
         )
 
         # Finally, we have the prior on coefficients, controlled by gamma
-        log_prior0 = jnp.log1p(-gamma)  # This is log(1-gamma)
-        log_prior1 = jnp.log(gamma)
+        log_prior0 = jnp.log1p(-gamma[k])  # This is log(1-gamma[k])
+        log_prior1 = jnp.log(gamma[k])
 
         # Now we can calculate unnormalized posteriors. Both are shape (features,)
         log_p0 = log_likelihood0 + log_coef0 + log_prior0

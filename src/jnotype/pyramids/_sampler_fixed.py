@@ -85,7 +85,7 @@ def _single_sampling_step(
         observed=observed,
         variances=variances,
         pseudoprior_variance=pseudoprior_variance,
-        gamma=gamma,
+        gamma=jnp.full_like(variances, gamma),
     )
     gamma = sample_gamma(
         key=subkey_gamma,
