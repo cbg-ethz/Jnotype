@@ -26,6 +26,9 @@ from jnotype._variance import sample_variances
 Sample = NewType("Sample", dict)
 
 
+_sample_csp_gibbs_jit = jax.jit(sample_csp_gibbs)
+
+
 def _single_sampling_step(
     *,
     # Auxiliary: random keys, static specification
@@ -70,7 +73,7 @@ def _single_sampling_step(
     """
     # --- Sample variances for latent variables from the CSP prior ---
     key, subkey = jax.random.split(jax_key)
-    csp_sample = sample_csp_gibbs(
+    csp_sample = _sample_csp_gibbs_jit(
         key=subkey,
         coefficients=coefficients[:, :n_binary_codes],
         structure=structure[:, :n_binary_codes],
@@ -89,7 +92,7 @@ def _single_sampling_step(
         prior_shape=variances_prior_shape,
         prior_scale=variances_prior_scale,
     )
-    variances = jnp.concatenate((csp_sample["variances"], observed_variances))
+    variances = jnp.concatenate((csp_sample["variance"], observed_variances))
 
     # --- Sample the sparse logistic regression layer ---
     # Sample intercepts and coefficients
@@ -188,12 +191,12 @@ def _single_sampling_step(
         #   - Variances for observed covariates
         "observed_variances": observed_variances,
         #   - Variances for latent binary codes, using CSP prior
-        "latent_variances": csp_sample["variances"],
+        "latent_variances": csp_sample["variance"],
         "csp_omega": csp_sample["omega"],
         "csp_nu": csp_sample["nu"],
         "csp_indicators": csp_sample["indicators"],
         "csp_active_traits": csp_sample["active_traits"],
-        "csp_n_active_traits": csp_sample["n_active_traits"],
+        "csp_n_active_traits": csp_sample["n_active"],
     }
 
 
@@ -444,5 +447,5 @@ class TwoLayerPyramidSamplerNonparametric(AbstractGibbsSampler):
             "csp_nu": csp_sample["nu"],
             "csp_indicators": csp_sample["indicators"],
             "csp_active_traits": csp_sample["active_traits"],
-            "csp_n_active_traits": csp_sample["n_active_traits"],
+            "csp_n_active_traits": csp_sample["n_active"],
         }
