@@ -21,6 +21,7 @@ repos:
       - id: interrogate
         exclude: tests
         args: [--config=pyproject.toml, --fail-under=95]
+        pass_filenames: false
   #- repo: https://github.com/RobertCraigie/pyright-python
     #rev: v1.1.296
     #hooks:
