@@ -520,9 +520,9 @@ rule plot_survival_difference:
     ax.axvline(np.log10(0.05), color="black", linestyle=":", linewidth=1, alpha=0.8)
 
     def _plot_hist(ax, vals):
-      ax.hist(relative_improvement, bins=10, color="blue", alpha=0.5)
+      ax.hist(vals, bins=10, color="blue", alpha=0.5)
       ax.axvline(0, color="black", linestyle=":", linewidth=1, alpha=0.8)
-      ax.axvline(np.median(relative_improvement), color="orangered", linestyle="-", linewidth=2)
+      ax.axvline(np.median(vals), color="orangered", linestyle="-", linewidth=2)
 
     ax = axs[1]
     ax.set_xlabel("$c_+$")
