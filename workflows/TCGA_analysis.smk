@@ -85,7 +85,11 @@ rule preprocess_data:
   run:
     # Read mutation matrix and remove binarised covariates
     mutations = pd.read_csv(input.mutation, sep="\t", index_col=0)
-    mutations = mutations.drop(["Age", "Gender", "Stage"], axis="columns")
+    mutations = mutations.drop(
+        ["Age", "Gender", "Stage"] + ["BLCA", "BRCA", "CESC", "COAD", "READ", "ESCA", "GBM", "HNSC", "KIRC", "KIRP", "LAML", "LGG", "LIHC", "LUAD", "LUSC", "OV", "PAAD", "PCPG", "PRAD", "SARC", "STAD", "THCA", "UCEC"],
+        axis="columns",
+    )
+    
     # Read clinical information and remove binarised (derived) information
     clinical = pd.read_csv(input.clinical, sep="\t", index_col=0)
     clinical = clinical.drop(["age.bin", "gender.bin", "stage.bin"], axis="columns")
