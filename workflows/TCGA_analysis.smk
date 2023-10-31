@@ -62,8 +62,8 @@ rule all:
   input:
     survival_plots = expand("generated/TCGA/{analysis}/summary/survival/plot.pdf", analysis=ANALYSES.keys()),
     latent_traits_plots = expand("generated/TCGA/{analysis}/summary/latent_traits.pdf", analysis=ANALYSES.keys()),
-    effect_sizes_plot = expand("generated/TCGA/{analysis}/summary/effect_sizes.pdf", analysis=ANALYSES.keys())
-
+    effect_sizes_plot = expand("generated/TCGA/{analysis}/summary/effect_sizes.pdf", analysis=ANALYSES.keys()),
+    learned_mutations_and_traits_plots = expand("generated/TCGA/{analysis}/bootstraps/{bootstrap}/plot_mutations_and_traits.pdf", analysis=ANALYSES.keys(), bootstrap=BOOTSTRAP_INDICES)
 
 rule download_clinical:
   output: "data/TCGA/raw/clinical-information.tsv"
@@ -219,6 +219,72 @@ rule extract_latents:
       is_constant=is_constant,
       order=order,
     )
+
+rule plot_structure:
+  input:
+    posterior_samples = "generated/TCGA/{analysis}/bootstraps/{bootstrap}/posterior_samples.nc",
+    latent_traits = "generated/TCGA/{analysis}/bootstraps/{bootstrap}/latent_traits.npz",
+    mutations = "generated/TCGA/{analysis}/bootstraps/{bootstrap}/mutation-matrix.csv"
+  output:
+    inferred_coefficients = "generated/TCGA/{analysis}/bootstraps/{bootstrap}/plot_inferred_coefficients.pdf",
+    mutations_and_traits = "generated/TCGA/{analysis}/bootstraps/{bootstrap}/plot_mutations_and_traits.pdf"
+  run:
+    mutations = pd.read_csv(input.mutations, index_col=0)
+    samples = xr.open_dataset(input.posterior_samples)
+    storage = np.load(input.latent_traits)
+
+    traits = storage["latent_traits"]
+    binarised = np.asarray(traits > 0.5, dtype=int)
+
+    structure = (samples["coefficients_latent"] * samples["structure_latent"]).mean(axis=0).values
+    structure = structure[:, ~(storage["is_too_rare"] | storage["is_constant"])]
+
+    def magic_index(arr):
+      idx = np.arange(len(arr))
+      idx = sorted(idx, key=lambda i: "".join(map(str, arr[i])))
+      return idx
+
+    genes_order = np.argsort(mutations.mean(axis=0))
+    patients_sorted = np.argsort(-mutations.mean(axis=1))
+
+    index = magic_index(binarised)
+    fig, axs = plt.subplots(3, 1, figsize=(8, 3), dpi=300, sharex=True)
+
+    ax = axs[0]
+    sns.heatmap(mutations.values[patients_sorted, :].T[genes_order[-50:], :], square=False, ax=ax, cmap="Greys", cbar=False)
+    ax.set_yticks([])
+    ax.set_xticks([])
+    ax.set_ylabel("Genes")
+    ax.set_xlabel("Patients (ordered by number of mutations)")
+
+    ax = axs[1]
+    sns.heatmap(mutations.values[index, :].T[genes_order[-50:], :], square=False, ax=ax, cmap="Greys", cbar=False)
+    ax.set_yticks([])
+    ax.set_xticks([])
+    ax.set_ylabel("Genes")
+    ax.set_xlabel("Patients (ordered by latent traits)")
+
+    ax = axs[2]
+    if binarised.shape[1] > 0:
+      sns.heatmap(binarised[index, :].T, square=False, ax=ax, cmap="Blues", cbar=False)
+    ax.set_ylabel("Traits")
+    ax.set_yticks([])
+    ax.set_xticks([])
+    ax.set_xlabel("Patients (ordered by latent traits)")
+
+    fig.tight_layout()
+    fig.savefig(output.mutations_and_traits)
+
+
+    fig, ax = plt.subplots(figsize=(8, 1.8), dpi=300)
+    if structure.shape[1] > 0:
+      sns.heatmap(structure[genes_order[-50:], :].T, cmap="bwr", center=0, vmin=-10, vmax=10, square=True, ax=ax, cbar=False, 
+                  xticklabels=genes_order[-50:].index)
+    ax.set_yticks([])
+    ax.set_ylabel("Traits")
+
+    fig.subplots_adjust(top=1.00, bottom=0.5)
+    fig.savefig(output.inferred_coefficients)
 
 
 class CaptureStdout:

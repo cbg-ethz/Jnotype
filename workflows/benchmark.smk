@@ -1,4 +1,5 @@
 import nimfa
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -9,6 +10,8 @@ from jnotype.pyramids import TwoLayerPyramidSampler
 from jnotype.sampling import ListDataset
 
 import _benchmark_utils as utils
+
+matplotlib.use("Agg")
 
 METHODS = [
     "bmf",
@@ -34,7 +37,8 @@ N_STEPS: int = 1500
 workdir: "generated/benchmark/"
 
 rule all:
-    input: expand("{method}-{components}/{dataset}/{seed}.npz", method=METHODS, components=COMPONENTS, dataset=DATASETS, seed=range(N_SEEDS))
+    input: 
+      arrays = expand("{method}-{components}/{dataset}/{seed}.npz", method=METHODS, components=COMPONENTS, dataset=DATASETS, seed=range(N_SEEDS))
 
 rule assemble_results_mi:
     input: expand("{method}-{components}/{dataset}/{seed}.npz", method=METHODS, components=COMPONENTS, dataset=DATASETS, seed=range(N_SEEDS))
@@ -84,13 +88,13 @@ rule plot_results_mse:
         df["Latent traits"] = df["components"]
 
         palette = {
-            2: "dodgerblue",    
-            4: "blue",
-            8: "navy",
+            2: "teal",    
+            4: "deepskyblue",
+            8: "blue",
         }
 
-        fig, ax = plt.subplots(figsize=(3, 3), dpi=250)
-        sns.boxplot(data=df, hue="Latent traits", x="dataset", y="coefficients_X_mse", ax=ax, palette=palette)
+        fig, ax = plt.subplots(figsize=(2.5, 2.5), dpi=350)
+        sns.boxplot(data=df, hue="Latent traits", x="dataset", y="coefficients_X_mse", ax=ax, palette=palette, linewidth=0.7, fliersize=0.5)
         ax.set_xlabel("Number of patients")
         ax.set_ylabel("Mean squared error")
         ax.legend(frameon=False)
@@ -106,9 +110,9 @@ rule plot_results_mi:
             if method == "bmf":
                 return f"BMF ({components})"
             elif method == "pyramids-unsupervised":
-                return f"Pyramids (unsupervised, {components})"
+                return f"UBP ({components})"
             elif method == "pyramids-labeled":
-                return f"Pyramids (labeled, {components})"
+                return f"LBP ({components})"
             elif method == "bmm":
                 return f"BMM ({components})"
             else:
@@ -118,27 +122,27 @@ rule plot_results_mi:
         df["algorithm"] = df.apply(lambda row: rename(row["method"], row["components"]), axis=1)
 
         color_list = [
-            "lightgray",
-            "darkgray",
             "dimgray",
-            #
-            "salmon",
             "red",
-            "firebrick",
+            "orange",
             #
-            "dodgerblue",    
+            "greenyellow",
+            "green",
+            "aquamarine",
+            #
+            "teal",    
+            "deepskyblue",
             "blue",
-            "navy",
             #
-            "lawngreen",
-            "limegreen",
-            "forestgreen",
+            "blueviolet",
+            "fuchsia",
+            "thistle",
         ]
         palette = dict(zip(df["algorithm"].unique(), color_list))
 
-        fig, ax = plt.subplots(figsize=(7, 3), dpi=250)
-        sns.boxplot(data=df, x="dataset", y="mutual_information_gap", hue="algorithm", palette = palette, ax=ax)
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=False)
+        fig, ax = plt.subplots(figsize=(6, 2.5), dpi=350)
+        sns.boxplot(data=df, x="dataset", y="mutual_information_gap", hue="algorithm", palette=palette, ax=ax, linewidth=0.7, fliersize=0.5)
+        ax.legend(bbox_to_anchor=(1, 1), loc='upper left', frameon=False, ncol=2)
         ax.set_ylabel("Mutual information gap")
         ax.set_xlabel("Number of patients")
 
