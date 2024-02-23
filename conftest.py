@@ -1,4 +1,5 @@
 """PyTest unit tests configuration file."""
+
 import dataclasses
 
 import pytest
