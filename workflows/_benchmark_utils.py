@@ -59,8 +59,6 @@ def calculate_probabilities(samples):
 def mutual_information(X_samples, Y_samples):
     assert len(X_samples) == len(Y_samples), "Mismatched sample sizes"
 
-    K = len(X_samples)
-
     # Joint probabilities P(X, Y)
     joint_samples = [(tuple(x), tuple(y)) for x, y in zip(X_samples, Y_samples)]
     joint_probabilities = calculate_probabilities(joint_samples)
