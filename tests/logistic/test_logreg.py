@@ -1,4 +1,5 @@
 """Tests for the logistic regression."""
+
 import jax.numpy as jnp
 
 import jnotype.logistic.logreg as lr

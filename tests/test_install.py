@@ -1,4 +1,5 @@
 """Simplest installation test."""
+
 from types import ModuleType
 
 

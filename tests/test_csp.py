@@ -1,4 +1,5 @@
 """Tests of the cumulative shrinkage prior (CSP) module."""
+
 import jax
 import jax.numpy as jnp
 from jax import random
