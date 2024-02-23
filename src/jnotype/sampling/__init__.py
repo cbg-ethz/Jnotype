@@ -1,4 +1,5 @@
 """Generic utilities for sampling."""
+
 from jnotype.sampling._chunker import (
     DatasetInterface,
     ListDataset,

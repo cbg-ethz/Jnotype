@@ -1,5 +1,6 @@
 """Sampler for two-layer Bayesian pyramids
-with fixed number of latent binary codes."""
+with cumulative shrinkage process (CSP) prior
+on latent binary codes."""
 
 from typing import Optional, Sequence, Union, NewType
 
@@ -20,10 +21,13 @@ from jnotype.logistic import (
     sample_binary_codes,
     sample_intercepts_and_coefficients,
 )
+from jnotype._csp import sample_csp_gibbs, sample_csp_prior
 from jnotype._variance import sample_variances
 
-_JointSample = NewType("_JointSample", dict)
-_SplitSample = NewType("_SplitSample", dict)
+Sample = NewType("Sample", dict)
+
+
+_sample_csp_gibbs_jit = jax.jit(sample_csp_gibbs)
 
 
 def _single_sampling_step(
@@ -39,25 +43,28 @@ def _single_sampling_step(
     coefficients: Float[Array, "observed covariates"],
     structure: Int[Array, "observed covariates"],
     covariates: Float[Array, "points covariates"],
-    variances: Float[Array, " covariates"],
+    observed_variances: Float[Array, " known_covariates"],
     gamma: Float[Array, ""],
-    nu: Float[Array, " observed_covariates"],
+    nu: Float[Array, " known_covariates"],
     cluster_labels: Int[Array, " points"],
     mixing: Float[Array, "n_binary_codes n_clusters"],
     proportions: Float[Array, " n_clusters"],
+    csp_omega: Float[Array, " n_binary_codes"],
+    csp_expected_occupied: float,
     # Priors
     dirichlet_prior: Float[Array, " n_clusters"],
-    nu_prior_a: Union[float, Float[Array, " observed_covariates"]] = 1.0,
-    nu_prior_b: Union[float, Float[Array, " observed_covariates"]] = 1.0,
-    pseudoprior_variance: float = 0.01,
-    intercept_prior_mean: float = 0.0,
-    intercept_prior_variance: float = 1.0,
-    gamma_prior_a: float = 1.0,
-    gamma_prior_b: float = 1.0,
-    variances_prior_shape: float = 2.0,
-    variances_prior_scale: float = 1.0,
-    mixing_beta_prior: tuple[float, float] = (1.0, 1.0),
-) -> _JointSample:
+    nu_prior_a: Union[float, Float[Array, " known_covariates"]],
+    nu_prior_b: Union[float, Float[Array, " known_covariates"]],
+    pseudoprior_variance: float,
+    intercept_prior_mean: float,
+    intercept_prior_variance: float,
+    gamma_prior_a: float,
+    gamma_prior_b: float,
+    mixing_beta_prior: tuple[float, float],
+    variances_prior_shape: float,
+    variances_prior_scale: float,
+    csp_theta_inf: float,
+) -> Sample:
     """Single sampling step of two-layer Bayesian pyramid.
 
     Note:
@@ -65,6 +72,29 @@ def _single_sampling_step(
         as well as NumPy's. This is necessary to use
         the Pólya-Gamma sampler (coefficients).
     """
+    # --- Sample variances for latent variables from the CSP prior ---
+    key, subkey = jax.random.split(jax_key)
+    csp_sample = _sample_csp_gibbs_jit(
+        key=subkey,
+        coefficients=coefficients[:, :n_binary_codes],
+        structure=structure[:, :n_binary_codes],
+        omega=csp_omega,
+        expected_occupied=csp_expected_occupied,
+        prior_shape=variances_prior_shape,
+        prior_scale=variances_prior_scale,
+        theta_inf=csp_theta_inf,
+    )
+    # --- Sample variances for observed variables from the usual prior ---
+    key, subkey = jax.random.split(key)
+    observed_variances = sample_variances(
+        key=subkey,
+        values=coefficients[:, n_binary_codes:],
+        mask=structure[:, n_binary_codes:],
+        prior_shape=variances_prior_shape,
+        prior_scale=variances_prior_scale,
+    )
+    variances = jnp.concatenate((csp_sample["variance"], observed_variances))
+
     # --- Sample the sparse logistic regression layer ---
     # Sample intercepts and coefficients
     key, subkey = jax.random.split(jax_key)
@@ -116,16 +146,6 @@ def _single_sampling_step(
         prior_b=nu_prior_b,
     )
 
-    # Sample prior variances for coefficients
-    key, subkey = jax.random.split(key)
-    variances = sample_variances(
-        key=subkey,
-        values=coefficients,
-        mask=structure,
-        prior_shape=variances_prior_shape,
-        prior_scale=variances_prior_scale,
-    )
-
     # Sample binary latent variables
     key, subkey = jax.random.split(key)
     covariates = sample_binary_codes(
@@ -153,67 +173,37 @@ def _single_sampling_step(
     )
 
     return {
+        # Intercepts and coefficients
         "intercepts": intercepts,
-        "coefficients": coefficients,
-        "structure": structure,
+        "coefficients_latent": coefficients[:, :n_binary_codes],
+        "coefficients_observed": coefficients[:, n_binary_codes:],
+        # Structure and sparsities
+        "structure_latent": structure[:, :n_binary_codes],
+        "structure_observed": structure[:, n_binary_codes:],
         "gamma": gamma,
         "nu": nu,
-        "variances": variances,
-        "covariates": covariates,
+        # Latent traits
+        "latent_traits": covariates[:, :n_binary_codes],
+        # Clustering
         "cluster_labels": cluster_labels,
         "proportions": proportions,
         "mixing": mixing,
+        # Variances:
+        #   - Variances for observed covariates
+        "observed_variances": observed_variances,
+        #   - Variances for latent binary codes, using CSP prior
+        "latent_variances": csp_sample["variance"],
+        "csp_omega": csp_sample["omega"],
+        "csp_nu": csp_sample["nu"],
+        "csp_indicators": csp_sample["indicators"],
+        "csp_active_traits": csp_sample["active_traits"],
+        "csp_n_active_traits": csp_sample["n_active"],
     }
 
 
-def _split_sample(n_binary_codes: int, sample: _JointSample) -> _SplitSample:
-    return {
-        "intercepts": sample["intercepts"],
-        "coefficients_latent": sample["coefficients"][:, :n_binary_codes],
-        "coefficients_observed": sample["coefficients"][:, n_binary_codes:],
-        "structure_latent": sample["structure"][:, :n_binary_codes],
-        "structure_observed": sample["structure"][:, n_binary_codes:],
-        "gamma": sample["gamma"],
-        "nu": sample["nu"],
-        "latent_variances": sample["variances"][:n_binary_codes],
-        "observed_variances": sample["variances"][n_binary_codes:],
-        "latent_traits": sample["covariates"][:, :n_binary_codes],
-        "cluster_labels": sample["cluster_labels"],
-        "proportions": sample["proportions"],
-        "mixing": sample["mixing"],
-    }
-
-
-def _merge_sample(
-    sample: _SplitSample,
-    observed_covariates: Float[Array, "points observed_covariates"],
-) -> _JointSample:
-    return {
-        "intercepts": sample["intercepts"],
-        "coefficients": jnp.hstack(
-            (sample["coefficients_latent"], sample["coefficients_observed"])
-        ),
-        "structure": jnp.hstack(
-            (sample["structure_latent"], sample["structure_observed"])
-        ),
-        "gamma": sample["gamma"],
-        "nu": sample["nu"],
-        "variances": jnp.concatenate(
-            (sample["latent_variances"], sample["observed_variances"])
-        ),
-        "covariates": jnp.hstack((sample["latent_traits"], observed_covariates)),
-        "cluster_labels": sample["cluster_labels"],
-        "proportions": sample["proportions"],
-        "mixing": sample["mixing"],
-    }
-
-
-class TwoLayerPyramidSampler(AbstractGibbsSampler):
+class TwoLayerPyramidSamplerNonparametric(AbstractGibbsSampler):
     """A prototype of a Gibbs sampler for a two-layer
-    Bayesian pyramid.
-
-    Current limitations:
-      - Shrinkage on latent binary layer is not used.
+    Bayesian pyramid with CSP prior.
     """
 
     def __init__(
@@ -222,7 +212,8 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         *,
         # Observed data and dimension specification
         observed: Int[Array, "points features"],
-        n_binary_codes: int = 8,
+        expected_binary_codes: float = 4,
+        max_binary_codes: int = 8,
         n_clusters: int = 10,
         observed_covariates: Optional[
             Float[Array, "points observed_covariates"]
@@ -237,6 +228,7 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         mixing_beta_prior: tuple[float, float] = (1.0, 5.0),
         intercept_prior_mean: float = -3,
         intercept_prior_variance: float = 1.0**2,
+        inactive_latent_variance_theta_inf: float = 0.1**2,
         # Gibbs sampling
         warmup: int = 5_000,
         steps: int = 10_000,
@@ -258,10 +250,19 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         )
         self._n_observed_covariates = self._observed_covariates.shape[1]
 
+        assert inactive_latent_variance_theta_inf > 0
+        self._csp_theta_inf = inactive_latent_variance_theta_inf
+
         assert n_clusters >= 1
         self._n_clusters = n_clusters
-        assert n_binary_codes >= 1
-        self._n_binary_codes = n_binary_codes
+
+        # We have number of binary codes modelled (maximum one)
+        # and number of binary codes expected a priori, as the rest
+        # will be marked as inactive.
+        assert max_binary_codes >= 1
+        self._n_binary_codes = max_binary_codes
+        assert expected_binary_codes > 0
+        self._kappa_0 = expected_binary_codes
 
         self._dirichlet_prior = dirichlet_prior
         self._gamma_prior = gamma_prior
@@ -278,7 +279,7 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         self._intercept_prior_variance = intercept_prior_variance
 
     @classmethod
-    def dimensions(cls) -> _SplitSample:
+    def dimensions(cls) -> Sample:
         """The sites in each sample with annotated dimensions."""
         return {
             "intercepts": ["features"],
@@ -288,29 +289,40 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
             "structure_observed": ["features", "observed_covariates"],
             "gamma": [],  # Float, no named dimensions
             "nu": ["observed_covariates"],
-            "latent_variances": ["latents"],
-            "observed_variances": ["observed_covariates"],
             "latent_traits": ["points", "latents"],
             "cluster_labels": ["points"],
             "proportions": ["clusters"],
             "mixing": ["latents", "clusters"],
+            # Obseved variances
+            "observed_variances": ["observed_covariates"],
+            # Latent variances are modelled using the CSP prior
+            "latent_variances": ["latents"],
+            "csp_omega": ["latents"],
+            "csp_nu": ["latents"],
+            "csp_indicators": ["latents"],
+            "csp_active_traits": ["latents"],
+            "csp_n_active_traits": [],  # Int, no named dimensions
         }
 
-    def new_sample(self, sample: _SplitSample) -> _SplitSample:
+    def new_sample(self, sample: Sample) -> Sample:
         """A new sample."""
-        sample: _JointSample = _merge_sample(
-            sample=sample, observed_covariates=self._observed_covariates
+        coefficients = jnp.hstack(
+            (sample["coefficients_latent"], sample["coefficients_observed"])
         )
-        new_sample: _JointSample = _single_sampling_step(
+        structure = jnp.hstack(
+            (sample["structure_latent"], sample["structure_observed"])
+        )
+        covariates = jnp.hstack((sample["latent_traits"], self._observed_covariates))
+        return _single_sampling_step(
             jax_key=self._jax_rng.key,
             numpy_rng=self._np_rng,
             n_binary_codes=self._n_binary_codes,
             observed=self._observed_data,
             intercepts=sample["intercepts"],
-            coefficients=sample["coefficients"],
-            structure=sample["structure"],
-            covariates=sample["covariates"],
-            variances=sample["variances"],
+            coefficients=coefficients,
+            structure=structure,
+            covariates=covariates,
+            observed_variances=sample["observed_variances"],
             gamma=sample["gamma"],
             nu=sample["nu"],
             cluster_labels=sample["cluster_labels"],
@@ -327,8 +339,10 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
             pseudoprior_variance=self._pseudoprior_variance,
             intercept_prior_mean=self._intercept_prior_mean,
             intercept_prior_variance=self._intercept_prior_variance,
+            csp_omega=sample["csp_omega"],
+            csp_expected_occupied=self._kappa_0,
+            csp_theta_inf=self._csp_theta_inf,
         )
-        return _split_sample(n_binary_codes=self._n_binary_codes, sample=new_sample)
 
     def _initialise_intercepts(self) -> Float[Array, " covariates"]:
         """Initializes the intercepts."""
@@ -365,7 +379,8 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         )
         return jnp.hstack((structure_codes, structure_observed_features))
 
-    def _initialise_full_sample(self) -> _JointSample:
+    def initialise(self) -> Sample:
+        """Initialises the sample."""
         # TODO(Pawel): This initialisation can be much improved.
         #   Hopefully it does not matter in the end, but assessment of
         #   chain mixing is very much required.
@@ -389,7 +404,17 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
         )
 
         structure = self._initialise_structure(gamma=gamma, nu=nu)
-        variances = jnp.ones(n_covariates)
+
+        csp_sample = sample_csp_prior(
+            self._jax_rng.key,
+            k=self._n_binary_codes,
+            expected_occupied=self._kappa_0,
+            theta_inf=self._csp_theta_inf,
+        )
+
+        variances = jnp.concatenate(
+            (csp_sample["variance"], jnp.ones(self._n_observed_covariates))
+        )
 
         _noise = jax.random.normal(self._jax_rng.key, shape=(n_outputs, n_covariates))
         _entries_variances = variances[
@@ -399,11 +424,13 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
 
         return {
             "intercepts": self._initialise_intercepts(),
-            "coefficients": coefficients,
-            "structure": structure,
+            "coefficients_latent": coefficients[:, : self._n_binary_codes],
+            "coefficients_observed": coefficients[:, self._n_binary_codes :],
+            "structure_latent": structure[:, : self._n_binary_codes],
+            "structure_observed": structure[:, self._n_binary_codes :],
             "gamma": gamma,
             "nu": nu,
-            "variances": variances,
+            "latent_traits": initial_binary_codes,
             "covariates": initial_covariates,
             "cluster_labels": jax.random.categorical(
                 self._jax_rng.key, logits=jnp.zeros(n_clusters), shape=(n_points,)
@@ -415,10 +442,11 @@ class TwoLayerPyramidSampler(AbstractGibbsSampler):
                 b=self._mixing_beta_prior[1],
                 shape=(self._n_binary_codes, n_clusters),
             ),
+            "observed_variances": variances[self._n_binary_codes :],
+            "latent_variances": csp_sample["variance"],
+            "csp_omega": csp_sample["omega"],
+            "csp_nu": csp_sample["nu"],
+            "csp_indicators": csp_sample["indicators"],
+            "csp_active_traits": csp_sample["active_traits"],
+            "csp_n_active_traits": csp_sample["n_active"],
         }
-
-    def initialise(self) -> _SplitSample:
-        """Initialises the sample."""
-        return _split_sample(
-            n_binary_codes=self._n_binary_codes, sample=self._initialise_full_sample()
-        )

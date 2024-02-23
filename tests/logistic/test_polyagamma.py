@@ -153,9 +153,7 @@ def test_sample_coefficients_nontrivial_structure(
         ]
     )
 
-    prior_variance = jnp.asarray(
-        [[0.6, 0.02**2], [0.03**2, 0.5], [0.04**2, 0.05**2]]
-    )
+    prior_variance = jnp.asarray([[0.6, 0.02**2], [0.03**2, 0.5], [0.04**2, 0.05**2]])
 
     current_coefficients = jnp.zeros_like(true_coefficients)
 

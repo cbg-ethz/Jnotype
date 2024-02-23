@@ -1,5 +1,6 @@
 """Sampling steps for all variables, apart from variances
 attributed to latent traits, which are sampled with CSP module."""
+
 from typing import Callable
 
 import jax

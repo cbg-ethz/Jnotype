@@ -1,11 +1,8 @@
 """PyTest unit tests configuration file."""
+
 import dataclasses
 
 import pytest
-
-import matplotlib
-
-matplotlib.use("Agg")
 
 
 @dataclasses.dataclass

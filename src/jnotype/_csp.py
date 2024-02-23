@@ -1,4 +1,5 @@
 """Cumulative shrinkage prior."""
+
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp

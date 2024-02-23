@@ -1,4 +1,5 @@
 """Generic Gibbs sampler."""
+
 import abc
 import logging
 import time

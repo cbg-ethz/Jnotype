@@ -1,4 +1,5 @@
 """The Expectation-Maximization algorithm for Bernoulli Mixture Model."""
+
 import dataclasses
 import time
 from typing import Optional
@@ -68,7 +69,11 @@ def em_step(
     observed: Int[Array, "N K"],
     mixing: Float[Array, "K B"],
     proportions: Float[Array, " B"],
-) -> tuple[Float[Array, "N B"], Float[Array, "K B"], Float[Array, " B"],]:
+) -> tuple[
+    Float[Array, "N B"],
+    Float[Array, "K B"],
+    Float[Array, " B"],
+]:
     """The E and M step combined, for better JIT compiler optimisation.
 
     Args:
@@ -160,7 +165,7 @@ def _init(
     *,
     n_features: int,
     n_clusters: Optional[int],  # type: ignore
-    key: Optional[jax.random.PRNGKeyArray],
+    key: Optional[jax.Array],
     mixing_init: Optional[Float[Array, "K B"]],
     proportions_init: Optional[Float[Array, " B"]],
 ) -> tuple[Float[Array, "K B"], Float[Array, " B"]]:
@@ -221,7 +226,7 @@ def expectation_maximization(
     observed: Int[Array, "K B"],
     *,
     n_clusters: Optional[int] = None,
-    key: Optional[jax.random.PRNGKeyArray] = None,
+    key: Optional[jax.Array] = None,
     mixing_init: Optional[Float[Array, "K B"]] = None,
     proportions_init: Optional[Float[Array, " B"]] = None,
     max_n_steps: int = 10_000,

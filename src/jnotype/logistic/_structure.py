@@ -1,4 +1,5 @@
 """Sample structure (spike/slab distinction) variables."""
+
 from typing import Union
 
 import jax
@@ -41,7 +42,7 @@ def _logpdf_gaussian(
 @jax.jit
 def sample_structure(
     *,
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     intercepts: Float[Array, " features"],
     coefficients: Float[Array, "features covs"],
     structure: Int[Array, "features covs"],
@@ -158,7 +159,7 @@ def sample_structure(
 
 @jax.jit
 def sample_gamma(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     structure: Int[Array, "G K"],
     prior_a: float = 1.0,
     prior_b: float = 1.0,
@@ -177,7 +178,7 @@ def sample_gamma(
 
 @jax.jit
 def sample_gamma_individual(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     structure: Int[Array, "G K"],
     prior_a: Float[Array, " K"],
     prior_b: Float[Array, " K"],

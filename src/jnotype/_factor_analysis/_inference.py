@@ -1,4 +1,5 @@
 """Sampling from the posterior distribution."""
+
 from typing import Callable
 
 from jaxtyping import Float, Array

@@ -1,4 +1,5 @@
 """Sampling cluster labels and proportions."""
+
 from typing import Optional, Sequence
 
 import jax
@@ -41,7 +42,7 @@ def _bernoulli_loglikelihood(
 
 
 def sample_cluster_labels(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     *,
     cluster_proportions: Float[Array, " B"],
     mixing: Float[Array, "K B"],
@@ -94,7 +95,7 @@ def _calculate_counts(labels: Int[Array, " N"], n_clusters: int) -> Int[Array, "
 
 
 def sample_cluster_proportions(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     *,
     labels: Int[Array, " N"],
     dirichlet_prior: Float[Array, " B"],
@@ -117,7 +118,7 @@ def sample_cluster_proportions(
 
 
 def sample_mixing(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     *,
     observations: Int[Array, "N K"],
     labels: Int[Array, " N"],
@@ -148,7 +149,7 @@ def sample_mixing(
 @jax.jit
 def single_sampling_step(
     *,
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     observed_data: Int[Array, "N K"],
     proportions: Float[Array, " B"],
     mixing: Float[Array, "K B"],
@@ -210,7 +211,7 @@ class BernoulliMixtureGibbsSampler(js.AbstractGibbsSampler):
         dirichlet_prior: Float[Array, " cluster"],
         beta_prior: tuple[float, float] = (1.0, 1.0),
         *,
-        jax_rng_key: Optional[jax.random.PRNGKeyArray] = None,
+        jax_rng_key: Optional[jax.Array] = None,
         warmup: int = 2000,
         steps: int = 3000,
         verbose: bool = False,

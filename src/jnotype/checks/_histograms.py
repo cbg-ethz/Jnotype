@@ -1,4 +1,5 @@
 """Plotting histograms of data."""
+
 from typing import Sequence, Union, Literal
 
 import matplotlib.pyplot as plt

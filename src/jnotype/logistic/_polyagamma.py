@@ -1,4 +1,5 @@
 """Logistic regression sampling utilities using Pólya-Gamma augmentation."""
+
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -22,7 +23,7 @@ _calculate_logits_jit = jax.jit(_calculate_logits)
 
 def _sample_coefficients(
     *,
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     omega: Float[Array, "points features"],
     covariates: Float[Array, "points covariates"],
     structure: Int[Array, "features covariates"],
@@ -53,9 +54,9 @@ def _sample_coefficients(
     precision_matrices: Float[Array, "features covariates covariates"] = jax.vmap(
         jnp.diag
     )(jnp.reciprocal(prior_variance))
-    posterior_covariances: Float[
-        Array, "features covariates covariates"
-    ] = jnp.linalg.inv(x_omega_x + precision_matrices)
+    posterior_covariances: Float[Array, "features covariates covariates"] = (
+        jnp.linalg.inv(x_omega_x + precision_matrices)
+    )
 
     kappa: Float[Array, "points features"] = jnp.asarray(observed, dtype=float) - 0.5
 
@@ -79,7 +80,7 @@ _sample_coefficients_jit = jax.jit(_sample_coefficients)
 
 def sample_coefficients(
     *,
-    jax_key: random.PRNGKeyArray,
+    jax_key: jax.Array,
     numpy_rng: np.random.Generator,
     observed: Int[Array, "points features"],
     design_matrix: Float[Array, "points covariates"],
@@ -214,7 +215,7 @@ def _augment_matrices(
 
 def sample_intercepts_and_coefficients(
     *,
-    jax_key: random.PRNGKeyArray,
+    jax_key: jax.Array,
     numpy_rng: np.random.Generator,
     observed: Int[Array, "points features"],
     intercepts: Float[Array, " features"],

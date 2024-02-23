@@ -1,4 +1,5 @@
 """Bernoulli Mixture Model."""
+
 from jnotype.bmm._em import expectation_maximization
 from jnotype.bmm._gibbs import (
     sample_mixing,
