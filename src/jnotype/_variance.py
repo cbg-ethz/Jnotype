@@ -8,7 +8,7 @@ from jaxtyping import Array, Float, Int
 
 
 def _sample_precisions(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     values: Float[Array, "G F"],
     mask: Int[Array, "G F"],
     prior_shape: float,
@@ -35,7 +35,7 @@ def _sample_precisions(
 
 @jax.jit
 def sample_variances(
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     values: Float[Array, "G F"],
     mask: Int[Array, "G F"],
     prior_shape: float = 2.0,

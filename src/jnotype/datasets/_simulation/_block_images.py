@@ -4,6 +4,7 @@ from typing import Optional
 
 from jaxtyping import Array, Float, Int
 import jax.numpy as jnp
+import jax
 from jax import random
 
 
@@ -140,7 +141,7 @@ class BlockImagesSampler:
 
     def sample_dataset(
         self,
-        key: random.PRNGKeyArray,
+        key: jax.Array,
         n_samples: int,
         *,
         probs: Optional[Float[Array, " n_classes"]] = None,

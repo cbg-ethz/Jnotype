@@ -17,7 +17,7 @@ class JAXRNG:
       b = jax.random.bernoulli(rng.key, shape=(10,))
     """
 
-    def __init__(self, key: jax.random.PRNGKeyArray) -> None:
+    def __init__(self, key: jax.Array) -> None:
         """
         Args:
             key: initialization key
@@ -25,7 +25,7 @@ class JAXRNG:
         self._key = key
 
     @property
-    def key(self) -> jax.random.PRNGKeyArray:
+    def key(self) -> jax.Array:
         """Generates a new key."""
         key, subkey = jax.random.split(self._key)
         self._key = key

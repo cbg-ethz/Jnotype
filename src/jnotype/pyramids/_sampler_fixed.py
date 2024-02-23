@@ -29,7 +29,7 @@ _SplitSample = NewType("_SplitSample", dict)
 def _single_sampling_step(
     *,
     # Auxiliary: random keys, static specification
-    jax_key: jax.random.PRNGKeyArray,
+    jax_key: jax.Array,
     numpy_rng: np.random.Generator,
     n_binary_codes: int,
     # Observed values

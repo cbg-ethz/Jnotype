@@ -165,7 +165,7 @@ def _init(
     *,
     n_features: int,
     n_clusters: Optional[int],  # type: ignore
-    key: Optional[jax.random.PRNGKeyArray],
+    key: Optional[jax.Array],
     mixing_init: Optional[Float[Array, "K B"]],
     proportions_init: Optional[Float[Array, " B"]],
 ) -> tuple[Float[Array, "K B"], Float[Array, " B"]]:
@@ -226,7 +226,7 @@ def expectation_maximization(
     observed: Int[Array, "K B"],
     *,
     n_clusters: Optional[int] = None,
-    key: Optional[jax.random.PRNGKeyArray] = None,
+    key: Optional[jax.Array] = None,
     mixing_init: Optional[Float[Array, "K B"]] = None,
     proportions_init: Optional[Float[Array, " B"]] = None,
     max_n_steps: int = 10_000,

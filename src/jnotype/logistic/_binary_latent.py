@@ -14,7 +14,7 @@ from jnotype.logistic._structure import _softmax_p1
 @partial(jax.jit, static_argnames="n_binary_codes")
 def sample_binary_codes(
     *,
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     intercepts: Float[Array, " features"],
     coefficients: Float[Array, "features covs"],
     structure: Int[Array, "features covs"],

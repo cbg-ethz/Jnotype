@@ -23,7 +23,7 @@ _calculate_logits_jit = jax.jit(_calculate_logits)
 
 def _sample_coefficients(
     *,
-    key: random.PRNGKeyArray,
+    key: jax.Array,
     omega: Float[Array, "points features"],
     covariates: Float[Array, "points covariates"],
     structure: Int[Array, "features covariates"],
@@ -80,7 +80,7 @@ _sample_coefficients_jit = jax.jit(_sample_coefficients)
 
 def sample_coefficients(
     *,
-    jax_key: random.PRNGKeyArray,
+    jax_key: jax.Array,
     numpy_rng: np.random.Generator,
     observed: Int[Array, "points features"],
     design_matrix: Float[Array, "points covariates"],
@@ -215,7 +215,7 @@ def _augment_matrices(
 
 def sample_intercepts_and_coefficients(
     *,
-    jax_key: random.PRNGKeyArray,
+    jax_key: jax.Array,
     numpy_rng: np.random.Generator,
     observed: Int[Array, "points features"],
     intercepts: Float[Array, " features"],
