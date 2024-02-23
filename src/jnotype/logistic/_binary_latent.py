@@ -1,4 +1,5 @@
 """Sample binary latent variables."""
+
 from functools import partial
 
 import jax

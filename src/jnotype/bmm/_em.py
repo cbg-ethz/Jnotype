@@ -1,4 +1,5 @@
 """The Expectation-Maximization algorithm for Bernoulli Mixture Model."""
+
 import dataclasses
 import time
 from typing import Optional
@@ -68,7 +69,11 @@ def em_step(
     observed: Int[Array, "N K"],
     mixing: Float[Array, "K B"],
     proportions: Float[Array, " B"],
-) -> tuple[Float[Array, "N B"], Float[Array, "K B"], Float[Array, " B"],]:
+) -> tuple[
+    Float[Array, "N B"],
+    Float[Array, "K B"],
+    Float[Array, " B"],
+]:
     """The E and M step combined, for better JIT compiler optimisation.
 
     Args:

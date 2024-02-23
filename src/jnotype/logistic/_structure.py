@@ -1,4 +1,5 @@
 """Sample structure (spike/slab distinction) variables."""
+
 from typing import Union
 
 import jax

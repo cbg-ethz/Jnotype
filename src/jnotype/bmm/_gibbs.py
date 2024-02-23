@@ -1,4 +1,5 @@
 """Sampling cluster labels and proportions."""
+
 from typing import Optional, Sequence
 
 import jax

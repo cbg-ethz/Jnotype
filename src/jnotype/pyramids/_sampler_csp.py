@@ -1,6 +1,7 @@
 """Sampler for two-layer Bayesian pyramids
 with cumulative shrinkage process (CSP) prior
 on latent binary codes."""
+
 from typing import Optional, Sequence, Union, NewType
 
 import jax

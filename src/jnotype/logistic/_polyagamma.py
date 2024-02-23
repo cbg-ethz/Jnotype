@@ -1,4 +1,5 @@
 """Logistic regression sampling utilities using Pólya-Gamma augmentation."""
+
 from jax import random
 import jax
 import jax.numpy as jnp
@@ -53,9 +54,9 @@ def _sample_coefficients(
     precision_matrices: Float[Array, "features covariates covariates"] = jax.vmap(
         jnp.diag
     )(jnp.reciprocal(prior_variance))
-    posterior_covariances: Float[
-        Array, "features covariates covariates"
-    ] = jnp.linalg.inv(x_omega_x + precision_matrices)
+    posterior_covariances: Float[Array, "features covariates covariates"] = (
+        jnp.linalg.inv(x_omega_x + precision_matrices)
+    )
 
     kappa: Float[Array, "points features"] = jnp.asarray(observed, dtype=float) - 0.5
 

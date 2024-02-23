@@ -1,5 +1,6 @@
 """Sampler for two-layer Bayesian pyramids
 with fixed number of latent binary codes."""
+
 from typing import Optional, Sequence, Union, NewType
 
 import jax

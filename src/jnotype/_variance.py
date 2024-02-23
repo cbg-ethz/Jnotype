@@ -1,4 +1,5 @@
 """Utilities for sampling variances."""
+
 from jax import random
 import jax
 import jax.numpy as jnp

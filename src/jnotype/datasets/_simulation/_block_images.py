@@ -1,4 +1,5 @@
 """Simulation of binary images using Bernoulli mixture model."""
+
 from typing import Optional
 
 from jaxtyping import Array, Float, Int

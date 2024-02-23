@@ -1,4 +1,5 @@
 """Logistic regression utilities."""
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Int, Float, Array
