@@ -35,6 +35,13 @@ ANALYSES = {
   "COAD": ["COAD"],
 }
 
+@dataclasses.dataclass
+class ModelSettings:
+    true_loc: tuple[int, int]
+
+MODELS = {
+    "one_parameter_model": ModelSettings(true_loc=(1, 2))
+}
 
 
 rule all:
@@ -98,6 +105,7 @@ rule one_parameter_all:
         prior_posterior_plot = "analysis/{analysis}/one_parameter_model/prior_posterior.pdf",
         posterior_histogram = "analysis/{analysis}/one_parameter_model/posterior.pdf",
         posterior_predictive_matrices = "analysis/{analysis}/one_parameter_model/posterior_predictive_matrices.pdf",
+        posterior_predictive_occurrences = "analysis/{analysis}/one_parameter_model/posterior_predictive_occurrence.pdf",
     output: touch("analysis/{analysis}/one_parameter_model/done.done")
 
 
@@ -167,12 +175,15 @@ rule one_parameter_sample_posterior_predictive:
         joblib.dump(samples, str(output))
 
 
-rule one_parameter_plot_posterior_predictive:
+
+# === Model-independent-rules ===
+
+rule plot_posterior_predictive_matrices:
     input:
         mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
-        posterior_predictive = "analysis/{analysis}/one_parameter_model/posterior_predictive.joblib"
+        posterior_predictive = "analysis/{analysis}/{model}/posterior_predictive.joblib"
     output:
-        matrices = "analysis/{analysis}/one_parameter_model/posterior_predictive_matrices.pdf",
+        matrices = "analysis/{analysis}/{model}/posterior_predictive_matrices.pdf",
     run:
         mutations = pd.read_csv(input.mutations, index_col=0).values
         samples = joblib.load(input.posterior_predictive)
@@ -183,7 +194,8 @@ rule one_parameter_plot_posterior_predictive:
             ax.set_xlabel("Patients")
             ax.set_ylabel("Genes")
 
-        ax = axs[1, 2]
+        x_true, y_true = MODELS[wildcards.model].true_loc
+        ax = axs[x_true, y_true]
         ax.clear()
 
         sns.heatmap(mutations, ax=ax, cmap="Blues", xticklabels=False, yticklabels=False, cbar=False, square=False)
@@ -193,6 +205,37 @@ rule one_parameter_plot_posterior_predictive:
         fig.tight_layout()
         fig.savefig(output.matrices)
 
+
+rule plot_posterior_predictive_gene_occurrence:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        posterior_predictive = "analysis/{analysis}/{model}/posterior_predictive.joblib"
+    output:
+        occurrences = "analysis/{analysis}/{model}/posterior_predictive_occurrence.pdf",
+    run:
+        samples = joblib.load(input.posterior_predictive)
+
+        fig, axs = plt.subplots(3, 4, sharex=True, sharey=True, dpi=250, figsize=(4*2, 3*2))
+        for ax, data in zip(axs.ravel(), samples[:len(axs.ravel()), ...]):
+            ax.scatter(np.arange(data.shape[1]), np.sort(data.sum(axis=0)), s=2, c="darkblue")
+
+        # Add the ground-truth values
+        x_true, y_true = MODELS[wildcards.model].true_loc
+        ax = axs[x_true, y_true]
+        data = pd.read_csv(input.mutations, index_col=0).values
+        ax.clear()
+
+        ax.scatter(np.arange(data.shape[1]), np.sort(data.sum(axis=0)), s=2, c="darkblue")
+
+        for ax in axs.ravel():
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_ylabel("Mutation frequency")
+            ax.set_xlabel("Genes (ordered)")
+            ax.spines[["top", "right"]].set_visible(False)
+
+        fig.tight_layout()
+        fig.savefig(output.occurrences)
 
 
 
