@@ -155,7 +155,7 @@ def sample_conditional_bernoulli(
         if n == 0:
             return 0  # = log 1
         elif n > size:
-            return -jnp.finfo(log_theta.dtype).min
+            return jnp.finfo(log_theta.dtype).min
         else:
             k = size - 1
             if k < 0 or k >= G:
@@ -168,6 +168,12 @@ def sample_conditional_bernoulli(
     for key, n in zip(jax.random.split(key, len(ns)), ns):
         sample = np.zeros(G, dtype=int)
         r = 0
+
+        if n == 0:
+            samples.append(np.zeros(G, dtype=int))
+            continue
+        elif n == G:
+            samples.append(np.ones(G, dtype=int))
 
         for k, subkey in enumerate(jax.random.split(key, G)):
             # We want to have G - (k+1) numbers in the set

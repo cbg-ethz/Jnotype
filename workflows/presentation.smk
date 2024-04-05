@@ -21,6 +21,8 @@ from lifelines.calibration import survival_probability_calibration
 from jnotype.pyramids import TwoLayerPyramidSampler, TwoLayerPyramidSamplerNonparametric
 from jnotype.sampling import ListDataset
 
+import jnotype.conditional_bernoulli as cbmodel
+
 import jax
 import jax.numpy as jnp
 import numpyro
@@ -50,6 +52,7 @@ class ModelSettings:
 MODELS = {
     "one_parameter_model": ModelSettings(true_loc=(1, 2)),
     "independent": ModelSettings(true_loc=(-1, 1)),
+    "conditional_Bernoulli": ModelSettings(true_loc=(1, -1)),
 }
 
 rule all:
@@ -60,6 +63,7 @@ rule run_all:
         basic_info = "analysis/{analysis}/basic_info/summary.json",
         one_parameter_model = "analysis/{analysis}/one_parameter_model/done.done",
         independent_model = "analysis/{analysis}/independent/done.done",
+        conditional_Bernoulli = "analysis/{analysis}/conditional_Bernoulli/done.done",
     output: touch("analysis/{analysis}/everything.done")
 
 
@@ -238,6 +242,275 @@ rule posterior_predictive_independent_model:
         predictive = Predictive(independent_model, posterior_samples=posterior_samples)
         predictive_samples = predictive(jax.random.PRNGKey(12), N=Y.shape[0], G=Y.shape[1])["obs"]
         joblib.dump(predictive_samples, str(output))
+
+
+# === Conditional Bernoulli model ===
+
+rule run_cond_bernoulli:
+    input:
+        theta_dist = "analysis/{analysis}/conditional_Bernoulli/posterior_samples_theta_dist.joblib",
+        predictive_n = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_n.joblib",
+        histogram_n = "analysis/{analysis}/conditional_Bernoulli/histogram_number_of_mutations.pdf",
+        posterior_predictive = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive.joblib",
+        posterior_predictive_histograms_many_panels =  "analysis/{analysis}/conditional_Bernoulli/histogram_number_of_mutations_many_panels.pdf",
+        posterior_predictive_histograms_single_panel = "analysis/{analysis}/conditional_Bernoulli/histogram_number_of_mutations_single_panel.pdf",
+        matrices = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_matrices_ordered.pdf",
+        theta_posterior_plot = "analysis/{analysis}/conditional_Bernoulli/theta_posterior.pdf",
+        mutation_frequency_posterior_predictive_plot = "analysis/{analysis}/conditional_Bernoulli/mutation_frequency_posterior_predictive.pdf",
+        occurrences = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_occurrence.pdf",
+        correlations = "analysis/{analysis}/conditional_Bernoulli/correlations.pdf",
+    output: touch("analysis/{analysis}/conditional_Bernoulli/done.done")
+
+rule mcmc_n_dist_cond_bernoulli:
+    input: 
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv"
+    output:
+        posterior = "analysis/{analysis}/conditional_Bernoulli/posterior_samples_n_dist.joblib",
+        predictive_n = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_n.joblib"
+    run:
+        def model(n_genes: int, counts = None, n_samples: int = None, n_components: int = 3):
+            if n_samples is None:
+                n_samples = len(counts)
+ 
+            mixing = numpyro.sample("mixing", dist.Dirichlet(np.ones(n_components)))
+            alpha = numpyro.sample('alpha', dist.Gamma(3 * np.ones(n_components), 0.5))
+            beta = numpyro.sample('beta', dist.Gamma(3 * np.ones(n_components), 0.5))
+
+            components = dist.BetaBinomial(alpha, beta, total_count=n_genes)
+            mixture = dist.MixtureSameFamily(
+                mixing_distribution=dist.Categorical(probs=mixing),
+                component_distribution=components,
+            )
+            with numpyro.plate("data", n_samples):
+                numpyro.sample("obs", mixture, obs=counts)
+
+        # MCMC inference
+        Y = pd.read_csv(input.mutations, index_col=0).values
+        nuts_kernel = NUTS(model)
+        mcmc = MCMC(nuts_kernel, num_warmup=500, num_samples=1000)
+
+        # Run the sampler
+        mcmc.run(jax.random.PRNGKey(0), counts=Y.sum(axis=1), n_genes=Y.shape[1])
+
+        # Get the posterior samples
+        posterior_samples = mcmc.get_samples()
+        predictive = Predictive(model, posterior_samples=posterior_samples)
+        predictive_samples = predictive(jax.random.PRNGKey(12), n_samples=Y.shape[0], n_genes=Y.shape[1])["obs"]
+
+        joblib.dump(posterior_samples, output.posterior)
+        joblib.dump(predictive_samples, output.predictive_n)
+
+rule mcmc_theta_cond_bernoulli:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv"
+    output: "analysis/{analysis}/conditional_Bernoulli/posterior_samples_theta_dist.joblib"
+    run:
+        Y = pd.read_csv(input.mutations, index_col=0).values
+
+        N, G = Y.shape
+        ns = Y.sum(axis=-1)
+        loglike_fn = cbmodel.generate_loglikelihood(Y, n_max=ns.max())
+
+        def model():
+            # The probabilities in a Bernoulli model
+            probs = numpyro.sample("probs", dist.Uniform(np.zeros(G), 1))
+            
+            # Now we need to calculate the weights vector, w = p/(1-p)
+            log_weights = jnp.log(probs) - jnp.log1p(-probs)
+            numpyro.factor("loglikelihood", loglike_fn(log_weights))
+
+
+        # MCMC inference
+        nuts_kernel = NUTS(model)
+        mcmc = MCMC(nuts_kernel, num_warmup=500, num_samples=1000)
+        mcmc.run(jax.random.PRNGKey(1))
+        samples = mcmc.get_samples()
+        joblib.dump(samples, str(output))
+
+
+def plot_theta_genes_posterior(
+    mutations_df: pd.DataFrame,
+    theta_samples: np.ndarray,
+    index: np.ndarray,
+) -> plt.Figure:
+    mutations = mutations_df.values
+    gene_names = mutations_df.columns
+
+    assert len(index) == 25
+
+    fig, axs = plt.subplots(5, 5, figsize=(5*2, 5*2), dpi=DPI, sharex=True, sharey=True)
+    for i, ax in zip(index, axs.ravel()):
+        gene_name = gene_names[i]
+        mutation_frequency = mutations[:, i].mean()
+        ax.set_xlabel("$\\theta_{\\mathrm{" + gene_name + "} }$")
+        ax.set_xlim(0, 1)
+            
+        ax.hist(theta_samples[:, i], bins=np.linspace(0, 1, 20), density=True, alpha=0.5, color="darkblue")
+        ax.set_yticks([])
+        ax.axvline(mutation_frequency, color="goldenrod", linewidth=2, linestyle="--")
+        ax.spines[["top", "left", "right"]].set_visible(False)
+
+    fig.tight_layout()
+    return fig
+
+
+rule plot_theta_posterior_cond_bernoulli:
+    input: 
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        samples = "analysis/{analysis}/conditional_Bernoulli/posterior_samples_theta_dist.joblib"
+    output: "analysis/{analysis}/conditional_Bernoulli/theta_posterior.pdf"
+    run:
+        _df = pd.read_csv(input.mutations, index_col=0)
+        mutations = _df.values
+        _sorted_indices = np.argsort(mutations.mean(axis=0))
+        mid = len(_sorted_indices) // 2
+
+        rng = np.random.default_rng(42)
+        random_ind = rng.choice(np.arange(10, len(_sorted_indices) - 10), size=15, replace=False)
+        indices = np.concatenate([_sorted_indices[:5], _sorted_indices[random_ind], _sorted_indices[-5:]])
+
+        samples = joblib.load(input.samples)["probs"]
+        fig = plot_theta_genes_posterior(mutations_df=_df, theta_samples=samples, index=indices)
+        fig.savefig(str(output))
+
+
+rule plot_mutation_frequency_cond_bernoulli:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        samples = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive.joblib"
+    output: "analysis/{analysis}/conditional_Bernoulli/mutation_frequency_posterior_predictive.pdf"
+    run:
+        _df = pd.read_csv(input.mutations, index_col=0)
+        mutations = _df.values
+        _sorted_indices = np.argsort(mutations.mean(axis=0))
+        mid = len(_sorted_indices) // 2
+
+        rng = np.random.default_rng(42)
+        random_ind = rng.choice(np.arange(10, len(_sorted_indices) - 10), size=15, replace=False)
+        indices = np.concatenate([_sorted_indices[:5], _sorted_indices[random_ind], _sorted_indices[-5:]])
+
+        samples = joblib.load(input.samples).mean(axis=1)
+        fig = plot_theta_genes_posterior(mutations_df=_df, theta_samples=samples, index=indices)
+        fig.savefig(str(output))
+
+
+def calculate_correlations(variables):
+    # Variables of shape (N_patients, N_genes)
+    index = np.argsort(variables.mean(axis=0))[-30:]
+    variables = variables[:, index]
+    
+    # p_both = np.einsum("ng,ne->ge", variables, variables) / len(variables)
+    # p_individual = np.einsum("g,e->ge", variables.mean(axis=0), variables.mean(axis=0))
+
+    # rho = p_both - p_individual
+
+    rho = np.corrcoef(variables, rowvar=False) 
+    return rho[~np.eye(len(rho), dtype=bool)]
+
+
+rule plot_correlations_cond_bernoulli:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        samples = "analysis/{analysis}/{model}/posterior_predictive.joblib"
+    output: "analysis/{analysis}/{model}/correlations.pdf"
+    run:
+        mutations = pd.read_csv(input.mutations, index_col=0).values
+        samples = joblib.load(input.samples)
+
+        fig, axs = plt.subplots(3, 4, dpi=300, figsize=(4*1.5, 3*1.2), sharex=True, sharey=True)
+
+        rng = np.random.default_rng(101)
+        indices = rng.choice(samples.shape[0],  size=len(axs.ravel()), replace=False)
+
+        genes_considered = np.arange(20)
+
+        bins = np.linspace(-0.2, 0.6, 20)
+
+        for ax, index in zip(axs.ravel(), indices):
+            data = samples[index, ...]
+
+            correlations = calculate_correlations(data)
+            ax.hist(correlations, bins=bins, color="darkblue", rasterized=True, density=True)
+            ax.spines[["top", "right"]].set_visible(False)
+            ax.set_xlabel("Correlations")
+            ax.set_yticks([])
+
+        x_true, y_true = MODELS[wildcards.model].true_loc
+        ax = axs[x_true, y_true]
+        ax.clear()
+
+        correlations = calculate_correlations(mutations)
+        ax.hist(correlations, bins=bins, color="goldenrod", rasterized=True, density=True)
+        ax.set_xlabel("Correlations")
+        ax.set_yticks([])
+        
+        fig.tight_layout()
+        fig.savefig(str(output))
+
+
+
+rule generate_posterior_predictive_conditional_bernoulli_ith_sample:
+    input:
+        posterior_predictive_n = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_n.joblib",
+        theta_samples = "analysis/{analysis}/conditional_Bernoulli/posterior_samples_theta_dist.joblib",
+    output: "analysis/{analysis}/conditional_Bernoulli/posterior_predictive/{ind}.joblib"
+    run:
+        index = int(wildcards.ind)
+        
+        ns = joblib.load(input.posterior_predictive_n)[index, :]
+        probs = joblib.load(input.theta_samples)["probs"][index, :]
+        log_weights = jnp.log(probs) - jnp.log1p(-probs)
+        
+        key = jax.random.PRNGKey(2 * index + 1)
+        Y = cbmodel.sample_conditional_bernoulli(key, ns=ns, log_theta=log_weights)
+
+        joblib.dump(Y, str(output))
+
+rule assemble_posterior_predictive_conditional_bernoulli:
+    output: "analysis/{analysis}/conditional_Bernoulli/posterior_predictive.joblib"
+    input: lambda wildcards: [f"analysis/{wildcards.analysis}/conditional_Bernoulli/posterior_predictive/{ind}.joblib" for ind in np.arange(0, 1000, 3)]
+    run:
+        samples = []
+        for pth in input:
+            sample = joblib.load(pth)
+            samples.append(sample)
+
+        samples = np.asarray(samples, dtype=int)
+        joblib.dump(samples, str(output))
+
+
+rule plot_posterior_number_of_mutations_conditional_Bernoulli:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        posterior_predictive_n = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_n.joblib"
+    output: "analysis/{analysis}/conditional_Bernoulli/histogram_number_of_mutations.pdf"
+    run:
+        mutations = pd.read_csv(input.mutations, index_col=0).values
+        samples = joblib.load(input.posterior_predictive_n)
+
+        fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.set_xlabel("Number of mutations")
+        ax.set_ylabel("Number of patients")
+
+        seed = 42
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(samples.shape[0],  size=min(samples.shape[0], 150), replace=False)
+
+        max_mut = max(samples.max(), mutations.sum(axis=-1).max())
+        # bins = np.arange(-0.5, max_mut + 1.5, 2)
+        bins = np.arange(-0.5, 120 + 1.5, 2)
+
+        for index in indices:
+            data = samples[index, ...]
+            ax.hist(data, bins=bins, rasterized=True, color="darkblue", linewidth=0.2, alpha=0.15, histtype="step")
+    
+        n_mutations = mutations.sum(axis=-1)
+        ax.hist(n_mutations, bins=bins, rasterized=True, color="goldenrod", linewidth=1, histtype="step")
+
+        fig.tight_layout()
+        fig.savefig(str(output))
+
 
 
 # === Model-independent-rules ===
