@@ -22,9 +22,9 @@ def generate_dataset(n_points: int, seed: int) -> None:
     effect_size = 4.0
 
     for i in range(n_covariates):
-        coefs[i * n_genes_per_covariate : (i + 1) * n_genes_per_covariate, i] = (
-            effect_size
-        )
+        coefs[
+            i * n_genes_per_covariate : (i + 1) * n_genes_per_covariate, i
+        ] = effect_size
 
     if n_additional_genes > 0:
         coefs[-n_additional_genes:, :] = effect_size * rng.binomial(
