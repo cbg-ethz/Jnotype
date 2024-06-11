@@ -61,6 +61,7 @@ rule all:
 rule run_all:
     input:
         basic_info = "analysis/{analysis}/basic_info/summary.json",
+        basic_info_correlations_and_frequencies = "analysis/{analysis}/basic_info/correlations_and_frequencies.json",
         one_parameter_model = "analysis/{analysis}/one_parameter_model/done.done",
         independent_model = "analysis/{analysis}/independent/done.done",
         conditional_Bernoulli = "analysis/{analysis}/conditional_Bernoulli/done.done",
@@ -109,6 +110,54 @@ rule basic_statistics:
 
         fig.tight_layout()
         fig.savefig(output.hist_n_mutations)
+
+
+rule basic_stats_highest_and_lower_correlation:
+    input: "data/preprocessed/{analysis}/mutation-matrix.csv"
+    output:
+        correlations_and_frequencies = "analysis/{analysis}/basic_info/correlations_and_frequencies.json",
+    run:
+        df = pd.read_csv(str(input), index_col=0)
+        gene_names = df.columns
+        mutations = df.values
+        rho = np.corrcoef(mutations, rowvar=False)
+        np.fill_diagonal(rho, 0.0)
+
+        i_min, j_min = np.unravel_index(rho.argmin(), rho.shape)
+        i_max, j_max = np.unravel_index(rho.argmax(), rho.shape)
+        correlation_stats = {
+            "lowest": {
+                "correlation": rho.min(),
+                "gene1": gene_names[i_min],
+                "gene2": gene_names[j_min],
+            },
+            "highest": {
+                "correlation": rho.max(),
+                "gene1": gene_names[i_max],
+                "gene2": gene_names[j_max],
+            },
+        }
+
+        freqs = mutations.mean(axis=0)
+
+        mutation_stats = {
+            "lowest": {
+                "frequency": np.min(freqs), 
+                "gene": gene_names[np.argmin(freqs)],
+            },
+            "highest": {
+                "frequency": np.max(freqs), 
+                "gene": gene_names[np.argmax(freqs)],
+            },
+        }
+
+        stats = {
+            "mutation_frequency": mutation_stats,
+            "correlations": correlation_stats,
+        }
+
+        with open(str(output), "w") as fh:
+            json.dump(stats, fh)
 
 
 # === One-parameter model ===
@@ -258,7 +307,9 @@ rule run_cond_bernoulli:
         theta_posterior_plot = "analysis/{analysis}/conditional_Bernoulli/theta_posterior.pdf",
         mutation_frequency_posterior_predictive_plot = "analysis/{analysis}/conditional_Bernoulli/mutation_frequency_posterior_predictive.pdf",
         occurrences = "analysis/{analysis}/conditional_Bernoulli/posterior_predictive_occurrence.pdf",
-        correlations = "analysis/{analysis}/conditional_Bernoulli/correlations.pdf",
+        correlations_multiple_panels = "analysis/{analysis}/conditional_Bernoulli/correlations_multiple_panels.pdf",
+        correlations_single_panel = "analysis/{analysis}/conditional_Bernoulli/correlations_single_panel.pdf",
+        correlations_lowest_highest = "analysis/{analysis}/conditional_Bernoulli/correlations_lowest_and_highest.pdf",
     output: touch("analysis/{analysis}/conditional_Bernoulli/done.done")
 
 rule mcmc_n_dist_cond_bernoulli:
@@ -396,23 +447,19 @@ rule plot_mutation_frequency_cond_bernoulli:
 
 def calculate_correlations(variables):
     # Variables of shape (N_patients, N_genes)
-    index = np.argsort(variables.mean(axis=0))[-30:]
-    variables = variables[:, index]
-    
-    # p_both = np.einsum("ng,ne->ge", variables, variables) / len(variables)
-    # p_individual = np.einsum("g,e->ge", variables.mean(axis=0), variables.mean(axis=0))
-
-    # rho = p_both - p_individual
+    # index = np.argsort(variables.mean(axis=0))[-30:]
+    # variables = variables[:, index]
 
     rho = np.corrcoef(variables, rowvar=False) 
-    return rho[~np.eye(len(rho), dtype=bool)]
+    r, c = np.triu_indices(rho.shape[0], k=1)
+    return rho[r, c]
 
 
-rule plot_correlations_cond_bernoulli:
+rule plot_correlations_cond_bernoulli_multiple_panels:
     input:
         mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
         samples = "analysis/{analysis}/{model}/posterior_predictive.joblib"
-    output: "analysis/{analysis}/{model}/correlations.pdf"
+    output: "analysis/{analysis}/{model}/correlations_multiple_panels.pdf"
     run:
         mutations = pd.read_csv(input.mutations, index_col=0).values
         samples = joblib.load(input.samples)
@@ -422,9 +469,7 @@ rule plot_correlations_cond_bernoulli:
         rng = np.random.default_rng(101)
         indices = rng.choice(samples.shape[0],  size=len(axs.ravel()), replace=False)
 
-        genes_considered = np.arange(20)
-
-        bins = np.linspace(-0.2, 0.6, 20)
+        bins = np.linspace(-0.2, 0.6, 30)
 
         for ax, index in zip(axs.ravel(), indices):
             data = samples[index, ...]
@@ -443,6 +488,88 @@ rule plot_correlations_cond_bernoulli:
         ax.hist(correlations, bins=bins, color="goldenrod", rasterized=True, density=True)
         ax.set_xlabel("Correlations")
         ax.set_yticks([])
+        
+        fig.tight_layout()
+        fig.savefig(str(output))
+
+
+rule plot_correlations_cond_bernoulli_single_panel:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        samples = "analysis/{analysis}/{model}/posterior_predictive.joblib"
+    output: "analysis/{analysis}/{model}/correlations_single_panel.pdf"
+    run:
+        mutations = pd.read_csv(input.mutations, index_col=0).values
+        samples = joblib.load(input.samples)
+
+        fig, ax = plt.subplots(dpi=DPI, figsize=FIGSIZE)
+
+        rng = np.random.default_rng(102)
+        indices = rng.choice(samples.shape[0],  size=100, replace=False)
+
+        bins = np.linspace(-0.2, 0.6, 30)
+
+        for index in indices:
+            data = samples[index, ...]
+
+            correlations = calculate_correlations(data)
+            ax.hist(correlations, bins=bins, color="darkblue", rasterized=True, density=True, histtype="step", alpha=0.1)
+        
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.set_xlabel("Correlations")
+        ax.set_yticks([])
+
+        correlations = calculate_correlations(mutations)
+        ax.hist(correlations, bins=bins, color="goldenrod", rasterized=True, density=True, linewidth=2, histtype="step")
+        ax.set_xlabel("Correlations")
+        ax.set_yticks([])
+        
+        fig.tight_layout()
+        fig.savefig(str(output))
+
+
+rule plot_lowest_and_highest_correlation:
+    input:
+        mutations = "data/preprocessed/{analysis}/mutation-matrix.csv",
+        samples = "analysis/{analysis}/{model}/posterior_predictive.joblib"
+    output: "analysis/{analysis}/{model}/correlations_lowest_and_highest.pdf"
+    run:
+        mutations = pd.read_csv(input.mutations, index_col=0).values
+        samples = joblib.load(input.samples)
+
+        fig, axs = plt.subplots(1, 2, dpi=DPI, figsize=(2*FIGSIZE[0], FIGSIZE[1]), sharex=False, sharey=False)
+
+        indices = np.arange(samples.shape[0])
+
+        lowest = []
+        highest = []
+
+        for index in indices:
+            data = samples[index, ...]
+
+            correlations = calculate_correlations(data)
+            lowest.append(np.min(correlations))
+            highest.append(np.max(correlations))
+
+        # xlim = (-0.2, 0.8)
+
+        for ax in axs:
+            ax.spines[["top", "right"]].set_visible(False)
+            ax.set_xlabel("Correlations")
+            ax.set_yticks([])
+            # ax.set_xlim(xlim[0], xlim[1])
+
+        correlations = calculate_correlations(mutations)
+
+        ax = axs[0]
+        ax.hist(lowest, bins=21, color="darkblue")
+        ax.axvline(np.min(correlations), linewidth=2, color="goldenrod")
+        ax.set_xlabel("Lowest correlation")        
+
+        ax = axs[1]
+        ax.hist(highest, bins=21, color="darkblue")
+        ax.axvline(np.max(correlations), linewidth=2, color="goldenrod")
+        ax.set_xlabel("Highest correlation")
         
         fig.tight_layout()
         fig.savefig(str(output))
