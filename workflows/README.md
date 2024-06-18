@@ -31,7 +31,7 @@ Tag: `exclusivity` (TODO: Not existing yet...)
 ### Conditional Bernoulli mixture model
 
 Directory: `cbmm`
-Tag: `cbmm`
+Tag: `cbmm` (TODO: Not existing yet.)
 
 In this project we propose the conditional Bernoulli mixture model.
 
