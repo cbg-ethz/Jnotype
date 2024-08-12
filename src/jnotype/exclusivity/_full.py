@@ -1,0 +1,1 @@
+"""Flexible mutual exclusivity model."""
