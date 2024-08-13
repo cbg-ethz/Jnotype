@@ -299,8 +299,8 @@ def sample_csp_prior(
     variances_active = sample_inverse_gamma(
         key=key_var,
         n_points=k,
-        a=prior_shape,
-        b=prior_scale,
+        shape=prior_shape,
+        scale=prior_scale,
     )
 
     variance = _select_variances_active(
