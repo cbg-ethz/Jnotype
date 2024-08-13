@@ -114,17 +114,16 @@ def sample_last_precision_column(
     s22: float = scatter[-1, -1]
 
     inv_C = (s22 + lambd) * inv_omega11 + jnp.diag(jnp.reciprocal(v12))
-    C = jnp.linalg.inv(inv_C)
-
-    key_u, key_v = jrandom.split(key)
-
-    u = jrandom.multivariate_normal(key_u, -C @ s12, C)
     rate = 0.5 * (s22 + lambd)
-    v = jrandom.gamma(key_v, 1 + 0.5 * n) / rate
 
-    new_omega22 = v + jnp.einsum("g,gh,h->", u, inv_omega11, u)
-
-    return jnp.append(u, new_omega22)
+    return num.sample_precision_column(
+        key,
+        inv_omega11=inv_omega11,
+        inv_C=inv_C,
+        scatter12=s12,
+        n_samples=n,
+        rate=rate,
+    )
 
 
 def sample_precision_matrix_column_by_column(

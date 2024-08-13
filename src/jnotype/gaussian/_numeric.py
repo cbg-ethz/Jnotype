@@ -6,6 +6,8 @@ free parameters.
 """
 
 import jax.numpy as jnp
+import jax.random as jrandom
+
 from jaxtyping import Float, Array, Num
 
 
@@ -59,3 +61,43 @@ def swap_with_last(A: Float[Array, "G G"], k: int) -> Float[Array, "G G"]:
     A = A.at[[k, m], :].set(A[[m, k], :])  # Swap rows
     A = A.at[:, [k, m]].set(A[:, [m, k]])  # Swap columns
     return A
+
+
+def sample_precision_column(
+    key,
+    inv_omega11: Float[Array, "G-1 G-1"],
+    inv_C: Float[Array, "G-1 G-1"],
+    scatter12: Float[Array, " G-1"],
+    n_samples: int,
+    rate: float,
+) -> Float[Array, " G"]:
+    """Samples the last column (row) using the factorization:
+        Normal(first G-1 entries) x Gamma(last entry)
+
+    Args:
+        key: JAX random key
+        inv_omega11: inverse of the (G-1) x (G-1) block
+            of the precision matrix
+        inv_C: inverse of the `C` matrix,
+            i.e., the precision matrix of the first `G-1` entries
+        scatter: column of the scatter matrix, shape (G,)
+        n_samples: number of samples, which controls the
+            shape parameter of the Gamma distribution
+        rate: the rate parameter of the Gamma distribution
+
+    Returns:
+        Sampled column of length `G`.
+    """
+    # Invert `inv_C` to obtain the variance
+    C = jnp.linalg.inv(inv_C)
+
+    key_u, key_v = jrandom.split(key)
+
+    u = jrandom.multivariate_normal(key_u, -C @ scatter12, C)
+
+    shape = 1 + 0.5 * n_samples
+    v = jrandom.gamma(key_v, shape) / rate
+
+    new_omega22 = v + jnp.einsum("g,gh,h->", u, inv_omega11, u)
+
+    return jnp.append(u, new_omega22)
