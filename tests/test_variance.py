@@ -87,8 +87,8 @@ def test_sample_inverse_gamma(n_samples: int, shape: float, scale: float) -> Non
     samples = _var.sample_inverse_gamma(
         key=key,
         n_points=n_samples,
-        a=shape,
-        b=scale,
+        shape=shape,
+        scale=scale,
     )
 
     assert jnp.mean(samples) == pytest.approx(scale / (shape - 1), rel=0.01)
