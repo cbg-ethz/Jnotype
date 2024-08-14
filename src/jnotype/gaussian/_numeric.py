@@ -5,10 +5,22 @@ matrix. An UTZD matrix of shape `(G, G)` has therefore G*(G-1)/2
 free parameters.
 """
 
+from typing import Optional
+
 import jax.numpy as jnp
 import jax.random as jrandom
 
 from jaxtyping import Float, Array, Num
+
+
+def construct_scatter_matrix(y: Float[Array, "N G"]) -> Float[Array, "G G"]:
+    """Constructs the scatter matrix of a data set, i.e.,
+
+    $$S_{ij} = \\sum_{n=1^N} y_{ni}y_{nj}$$
+
+    for $i, j=1, \\dotsc, G$.
+    """
+    return jnp.einsum("ng,nh->gh", y, y)
 
 
 def utzd_to_vector(matrix: Num[Array, "G G"]) -> Num[Array, " G*(G-1)/2"]:
@@ -101,3 +113,63 @@ def sample_precision_column(
     new_omega22 = v + jnp.einsum("g,gh,h->", u, inv_omega11, u)
 
     return jnp.append(u, new_omega22)
+
+
+def prepare_data(
+    data: Optional[Float[Array, "points features"]],
+    scatter: Optional[Float[Array, "features features"]],
+    n_points: Optional[int],
+) -> tuple[Float[Array, "features features"], int]:
+    """Generates the scatter matrix and the number of points.
+
+    Args:
+        data: optional data matrix
+        scatter: optional scatter matrix.
+            Provide *either* `data` or `scatter`
+        n_points: optional number of points.
+            Has to be provided whenever `scatter` is provided
+
+    Raises:
+        ValueError, if the data do not align properly
+            or if both `data` and `scatter` are provided
+    """
+    if data is None and (scatter is None or n_points is None):
+        raise ValueError(
+            "Not enough arguments provided. "
+            "Provide *either* data (n_points, n_features) "
+            "or both the scatter matrix (n_features, n_features "
+            "and the number of points."
+        )
+    if data is not None and (scatter is not None or n_points is not None):
+        raise ValueError(
+            "Too many arguments provided. "
+            "Provide *either* data (n_points, n_features) "
+            "or both the scatter matrix (n_features, n_features) "
+            "and the number of points."
+        )
+
+    # Case 1: We have the data
+    if data is not None:
+        if len(data.shape) != 2:
+            raise ValueError(
+                f"Data has to have shape (n_points, n_features), "
+                f"but has {data.shape}."
+            )
+
+        n_points = data.shape[0]
+        scatter = construct_scatter_matrix(data)
+        return scatter, n_points
+
+    # Case 2: We have the scatter matrix and the number of points
+    assert n_points is not None, "Number of points not provided."
+    assert scatter is not None, "Scatter matrix not provided."
+
+    if len(scatter.shape) != 2 or scatter.shape[0] != scatter.shape[1]:
+        raise ValueError(
+            f"The scatter matrix has to be a square matrix, "
+            f"but has shape {scatter.shape}"
+        )
+
+    if n_points < 0:
+        raise ValueError("Number of points cannot be negative.")
+    return scatter, n_points
