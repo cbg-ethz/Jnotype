@@ -95,15 +95,15 @@ def sample_variances(
 def sample_inverse_gamma(
     key,
     n_points: int,
-    a: float,
-    b: float,
+    shape: float,
+    scale: float,
 ) -> Float[Array, " n_points"]:
     """Samples from the inverse gamma distribution.
 
     Args:
         key: JAX random key
-        a: shape parameter of the inverse gamma distribution
-        b: scale parameter of the inverse gamma distribution
+        shape: shape parameter of the inverse gamma distribution
+        scale: scale parameter of the inverse gamma distribution
         n_points: number of points to sample
 
     Note that:
@@ -111,5 +111,5 @@ def sample_inverse_gamma(
     is equivalent to
         1/X ~ Gamma(shape=a, rate=b)
     """
-    one_over_x = random.gamma(key, a, shape=(n_points,)) / b
+    one_over_x = random.gamma(key, shape, shape=(n_points,)) / scale
     return jnp.reciprocal(one_over_x)

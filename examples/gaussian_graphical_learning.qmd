@@ -1,0 +1,487 @@
+---
+title: Learning sparse Gaussian graphical models
+format:
+  html:
+    code-fold: true
+jupyter: python3
+toc: true
+number-sections: true
+---
+
+In this tutorial we will learn a sparse Gaussian graphical models by using appropriate priors on the precision matrices.
+
+We assume that there is a sparse symmetric positive definite matrix $Q\in \mathbb{R}^{G\times G}$, which describes a Gaussian graphical model as following:
+
+$$
+    Y_n\mid Q\sim \mathcal N\left(\mathbf{0}, Q^{-1}\right)
+$$
+for $n=1, \dotsc, N$.
+In other words, matrix $Q$ is the *precision matrix* (with $Q^{-1}$ being the covariance matrix), which we assume to be sparse.
+We expect that this matrix is rather sparse: $Q_{12} = 0$ corresponds to the conditional independence of $Y_{n1}$ and $Y_{n2}$ given variables $Y_{n3}, \dotsc, Y_{nG}$ (for any particular $n$).
+
+## Generating the data
+
+Let's start by generating a sparse positive-definite matrix $Q$. We will sample it from a graphical spike-and-slab prior proposed by [Hao Wang, *Scaling it up: Stochastic search structure learning in graphical models* (2015)](https://arxiv.org/abs/1505.01687), employing the Gibbs sampler he introduced:
+
+```{python}
+
+import jnotype as jt
+import jnotype.gaussian as gauss
+
+import jax
+import jax.numpy as jnp
+import jax.random as jrandom
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+key = jrandom.PRNGKey(32)
+
+G = 10  # Dimensionality
+N = 150  # The number of samples to be generated
+
+aux_dataset = jt.sampling.ListDataset(
+    thinning=1,
+    dimensions=gauss.PrecisionMatrixSpikeAndSlabSampler.dimensions(),
+)
+
+gibbs_sampler = gauss.PrecisionMatrixSpikeAndSlabSampler(
+    datasets=[aux_dataset],
+    scatter_matrix=jnp.zeros((G, G)),
+    n_points=0,
+    warmup=1000,
+    steps=1,
+    verbose=True,
+    seed=121,
+    pi=0.2,
+    std0=0.1,
+    std1=2,
+    lambd=0.8,
+    deterministic_init=False,
+)
+
+gibbs_sampler.run()
+
+prec_true = aux_dataset.samples[-1]["precision"]
+
+fig, ax = plt.subplots()
+
+sns.heatmap(prec_true, ax=ax, cmap="bwr", center=0)
+ax.set_title("Generated precision matrix")
+ax.set_xticks([])
+ax.set_yticks([])
+```
+
+Now let's generate the $N\times G$ matrix representing the observed samples $Y_n$:
+
+```{python}
+
+cov_true = jnp.linalg.inv(prec_true + 1e-6)
+
+Y = jrandom.multivariate_normal(key, jnp.zeros(G), cov_true, shape=(N,))
+```
+
+Let's estimate the covariance from the sample and then invert it to get a precision estimate:
+
+```{python}
+fig, axs = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(4*1.1, 4))
+
+cov_empirical = jnp.cov(Y.T)
+prec_empirical = jnp.linalg.inv(cov_empirical + 1e-6 * jnp.eye(G))
+
+vmin_cov = min(cov_empirical.min(), cov_true.min())
+vmax_cov = max(cov_empirical.max(), cov_true.max())
+cmap_cov = "PiYG"
+
+vmin_prec = min(prec_true.min(), prec_true.max())
+vmax_prec = max(prec_true.max(), prec_true.max())
+cmap_prec = "bwr"
+
+ax = axs[0, 0]
+sns.heatmap(
+    prec_true,
+    cmap=cmap_prec,
+    center=0,
+    ax=ax,
+    vmin=vmin_prec,
+    vmax=vmax_prec,
+)
+ax.set_title("True precision")
+
+ax = axs[0, 1]
+sns.heatmap(
+    cov_true,
+    cmap=cmap_cov,
+    center=0,
+    ax=ax,
+    vmin=vmin_cov, vmax=vmax_cov,
+)
+ax.set_title("True covariance")
+
+ax = axs[1, 0]
+sns.heatmap(
+    prec_empirical,
+    center=0,
+    ax=ax,
+    cmap=cmap_prec,
+    vmin=vmin_prec,
+    vmax=vmax_prec,
+)
+ax.set_title("Estimated precision")
+
+ax = axs[1, 1]
+sns.heatmap(
+    cov_empirical,
+    center=0,
+    ax=ax,
+    cmap=cmap_cov,
+    vmin=vmin_cov,
+    vmax=vmax_cov)
+ax.set_title("Estimated covariance")
+
+for ax in axs.ravel():
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+fig.tight_layout()
+
+```
+
+Even though the sample covariance somehow approximates the ground-truth covariance, matrix inverse introduced a lot of additional entries to the precision matrix estimate...
+
+Let's understand how much these matrices differ by plotting separately the diagonal and the off-diagonal entries:
+
+```{python}
+fig, axs = plt.subplots(1, 2)
+
+ax = axs[0]
+ax.set_title("Diagonal")
+true_diagonal = jnp.diagonal(prec_true)
+diagonal_ordering = jnp.argsort(true_diagonal)[::-1]
+
+color_true = "k"
+color_estimate = "orange"
+
+ax.plot(
+    true_diagonal[diagonal_ordering],
+    c=color_true,
+    linestyle="-",
+    label="True"
+)
+ax.plot(
+    jnp.diagonal(prec_empirical)[diagonal_ordering],
+    c=color_estimate,
+    linestyle="--",
+    label="Estimate"
+)
+
+ax = axs[1]
+ax.set_title("Off-diagonal")
+o1, o2 = jnp.triu_indices(G, k=1)
+true_offdiagonal = prec_true[o1, o2]
+offdiagonal_ordering = jnp.argsort(true_offdiagonal)[::-1]
+
+def matrix_to_offdiagonal(m):
+    return m[o1, o2][offdiagonal_ordering]
+
+ax.plot(
+    matrix_to_offdiagonal(prec_true),
+    c=color_true,
+    linestyle="-"
+)
+ax.plot(
+    matrix_to_offdiagonal(prec_empirical),
+    c=color_estimate,
+    linestyle="--"
+)
+
+
+for ax in axs:
+    ax.spines[["top", "right"]].set_visible(False)
+
+fig.legend(frameon=False)
+```
+
+## Spike-and-slab prior
+
+Let's use a model-based estimator, where we find $Q$ by explicitly using the assumed model $Y_n\sim \mathcal N\left(\mathbf{0}, Q^{-1}\right)$.
+To calculate the likelihood, one can use the *scatter matrix*, rather than the original data:
+$$
+    S_{ij} = \sum_{n=1}^N Y_{ni}Y_{nj} = Y^TY.
+$$
+
+We can calculate it as following:
+
+```{python}
+# The scatter matrix
+scatter = gauss.construct_scatter_matrix(Y)
+```
+
+Now we can use it to estimate $Q$ by using a Gibbs sampler and assuming a spike-and-slab prior.
+We will use essentially the same sampler as before, but this time we provide the scatter matrix and number of samples obtained from the data:
+
+```{python}
+dataset = jt.sampling.ListDataset(
+    thinning=2,
+    dimensions=gauss.PrecisionMatrixSpikeAndSlabSampler.dimensions(),
+)
+
+sampler = gauss.PrecisionMatrixSpikeAndSlabSampler(
+    datasets=[dataset],
+    scatter_matrix=scatter,
+    n_points=N,
+    warmup=1000,
+    steps=2000,
+    verbose=True,
+    seed=0,
+    std0=0.1,
+)
+
+sampler.run()
+precs = jnp.array(dataset.dataset["precision"])
+```
+
+In principle, we should run multiple chains and see whether there are any convergence issues.
+In this tutorial we will however rely on a single one.
+
+Let's investigate the obtained estimate.
+Note that a linear combination of two symmetric positive definite matrices is still symmetric positive definite, provided that the coefficients are positive (geometrically speaking, the set of symmetric positive definite matrices forms a [convex cone](https://en.wikipedia.org/wiki/Convex_cone)).
+Hence, the posterior mean is also a symmetric positive definite matrix. Let's plot is as a point estimate: 
+
+```{python}
+fig, axs = plt.subplots(1, 3, figsize=(7, 2.5), sharex=True, sharey=True)
+
+ax = axs[0]
+ax.set_title("True precision")
+sns.heatmap(
+    prec_true,
+    ax=ax,
+    cmap=cmap_prec,
+    center=0,
+    vmin=vmin_prec,
+    vmax=vmax_prec,
+)
+
+ax = axs[1]
+ax.set_title("Posterior mean")
+sns.heatmap(precs.mean(axis=0), ax=ax, cmap="bwr", center=0, vmin=vmin_prec, vmax=vmax_prec)
+
+ax = axs[2]
+ax.set_title("Entrywise\nstandard deviation")
+sns.heatmap(
+    precs.std(axis=0),
+    ax=ax,
+    cmap="Greys",
+    vmin=0,
+)
+
+
+for ax in axs.ravel():
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+fig.tight_layout()
+```
+
+On the right hand side we see the standard deviation, quantifying how uncertain we are.
+Similarly as before, we can also plot the diagonal and off-diagonal entries separately.
+This time, however, we have a measure of uncertainty. As we are plotting individual entries, we will plot the median and a 80%-credible interval ranging between the 10% and 90% quantiles.
+
+```{python}
+fig, axs = plt.subplots(1, 2)
+
+ax = axs[0]
+ax.set_title("Diagonal")
+
+x_ax = jnp.arange(len(true_diagonal))
+
+ax.plot(
+    x_ax,
+    true_diagonal[diagonal_ordering],
+    c=color_true,
+    linestyle="-",
+)
+
+aux = []
+for prec in precs:
+    aux.append(jnp.diagonal(prec)[diagonal_ordering])
+
+aux = jnp.asarray(aux)
+median = jnp.quantile(aux, axis=0, q=0.5)
+low = jnp.quantile(aux, axis=0, q=0.1)
+high = jnp.quantile(aux, axis=0, q=0.9)
+
+ax.plot(
+    x_ax,
+    median,
+    c=color_estimate,
+    linestyle="--",
+    alpha=1.0,
+)
+ax.fill_between(x_ax, low, high, alpha=0.1, color=color_estimate)
+
+ax = axs[1]
+ax.set_title("Off-diagonal")
+
+x_ax = jnp.arange(len(matrix_to_offdiagonal(prec_true)))
+
+ax.plot(
+    x_ax,
+    matrix_to_offdiagonal(prec_true),
+    c=color_true,
+    linestyle="-"
+)
+
+aux = []
+for prec in precs:
+    aux.append(matrix_to_offdiagonal(prec))
+
+aux = jnp.asarray(aux)
+median = jnp.quantile(aux, axis=0, q=0.5)
+low = jnp.quantile(aux, axis=0, q=0.1)
+high = jnp.quantile(aux, axis=0, q=0.9)
+
+ax.plot(
+    x_ax,
+    median,
+    c=color_estimate,
+    linestyle="--",
+    alpha=1.0,
+)
+ax.fill_between(x_ax, low, high, alpha=0.1, color=color_estimate)
+
+for ax in axs:
+    ax.spines[["top", "right"]].set_visible(False)
+```
+
+## Horseshoe prior
+
+An alternative prior is the graphical horseshoe prior, proposed by [Y. Li, B.A. Craig and A. Bhadra, *The graphical horseshoe estimator for inverse covariance matrices* (2019)](https://arxiv.org/abs/1707.06661).
+
+We can sample from it in an analogous fashion:
+
+```{python}
+dataset = jt.sampling.ListDataset(
+    thinning=2,
+    dimensions=gauss.PrecisionMatrixHorseshoeSampler.dimensions(),
+)
+
+sampler = gauss.PrecisionMatrixHorseshoeSampler(
+    datasets=[dataset],
+    scatter_matrix=scatter,
+    n_points=N,
+    warmup=1000,
+    steps=2000,
+    verbose=True,
+    seed=0,
+)
+
+sampler.run()
+precs = jnp.array(dataset.dataset["precision"])
+```
+
+Let's plot the mean estimate:
+
+```{python}
+fig, axs = plt.subplots(1, 3, figsize=(7, 2.5), sharex=True, sharey=True)
+
+ax = axs[0]
+ax.set_title("True precision")
+sns.heatmap(
+    prec_true,
+    ax=ax,
+    cmap=cmap_prec,
+    center=0,
+    vmin=vmin_prec,
+    vmax=vmax_prec,
+)
+
+ax = axs[1]
+ax.set_title("Posterior mean")
+sns.heatmap(precs.mean(axis=0), ax=ax, cmap="bwr", center=0, vmin=vmin_prec, vmax=vmax_prec)
+
+ax = axs[2]
+ax.set_title("Entrywise\nstandard deviation")
+sns.heatmap(
+    precs.std(axis=0),
+    ax=ax,
+    cmap="Greys",
+    vmin=0,
+)
+
+
+for ax in axs.ravel():
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+fig.tight_layout()
+```
+
+Finally, we can separately visualise the diagonal and the off-diagonal entries:
+
+```{python}
+fig, axs = plt.subplots(1, 2)
+
+ax = axs[0]
+ax.set_title("Diagonal")
+
+x_ax = jnp.arange(len(true_diagonal))
+
+ax.plot(
+    x_ax,
+    true_diagonal[diagonal_ordering],
+    c=color_true,
+    linestyle="-",
+)
+
+aux = []
+for prec in precs:
+    aux.append(jnp.diagonal(prec)[diagonal_ordering])
+
+aux = jnp.asarray(aux)
+median = jnp.quantile(aux, axis=0, q=0.5)
+low = jnp.quantile(aux, axis=0, q=0.1)
+high = jnp.quantile(aux, axis=0, q=0.9)
+
+ax.plot(
+    x_ax,
+    median,
+    c=color_estimate,
+    linestyle="--",
+    alpha=1.0,
+)
+ax.fill_between(x_ax, low, high, alpha=0.1, color=color_estimate)
+
+ax = axs[1]
+ax.set_title("Off-diagonal")
+
+x_ax = jnp.arange(len(matrix_to_offdiagonal(prec_true)))
+
+ax.plot(
+    x_ax,
+    matrix_to_offdiagonal(prec_true),
+    c=color_true,
+    linestyle="-"
+)
+
+aux = []
+for prec in precs:
+    aux.append(matrix_to_offdiagonal(prec))
+
+aux = jnp.asarray(aux)
+median = jnp.quantile(aux, axis=0, q=0.5)
+low = jnp.quantile(aux, axis=0, q=0.1)
+high = jnp.quantile(aux, axis=0, q=0.9)
+
+ax.plot(
+    x_ax,
+    median,
+    c=color_estimate,
+    linestyle="--",
+    alpha=1.0,
+)
+ax.fill_between(x_ax, low, high, alpha=0.1, color=color_estimate)
+
+for ax in axs:
+    ax.spines[["top", "right"]].set_visible(False)
+```
