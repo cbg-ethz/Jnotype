@@ -28,6 +28,8 @@ In this project we looked at labeled Bayesian pyramids.
 Directory: `exclusivity`
 Tag: `exclusivity` (TODO: Not existing yet...)
 
+Bayesian workflow employed to model mutual exclusivity patterns.
+
 ### Conditional Bernoulli mixture model
 
 Directory: `cbmm`
