@@ -1,4 +1,4 @@
-"""Markov chain Monte Carlo sampling of binary vectors from generalised Ising models."""
+"""Markov chain Monte Carlo sampling of binary vectors from energy-based models."""
 
 from typing import Callable
 
@@ -46,7 +46,7 @@ def _gibbs_bitflip(
     y: _DataPoint,
     idx: int,
 ) -> _DataPoint:
-    """Applies a Gibbs sampling step for bit at `idx`."""
+    """Applies a Gibbs sampling step for bit at location `idx`."""
     # Calculate the probabilities for both choices of this bit
     y0 = y.at[idx].set(0)
     y1 = y.at[idx].set(1)
@@ -54,8 +54,8 @@ def _gibbs_bitflip(
     ys = jnp.vstack((y0, y1))
     logits = jax.vmap(log_prob_fn)(ys)
 
-    idx = jrandom.categorical(key, logits=logits)
-    return ys[idx]
+    chosen_index = jrandom.categorical(key, logits=logits)
+    return ys[chosen_index]
 
 
 def _random_site_bitflip(
@@ -66,10 +66,10 @@ def _random_site_bitflip(
     """Samples a single bit in the Ising model."""
     G = y.shape[0]
     # Pick a random index to update
-    key, subkey = jrandom.split(key)
-    idx = jrandom.randint(subkey, shape=(), minval=0, maxval=G)
+    key1, key2 = jrandom.split(key)
+    idx = jrandom.randint(key1, shape=(), minval=0, maxval=G)
 
-    return _gibbs_bitflip(key=key, log_prob_fn=log_prob_fn, y=y, idx=idx)
+    return _gibbs_bitflip(key=key2, log_prob_fn=log_prob_fn, y=y, idx=idx)
 
 
 def construct_random_bitfip_kernel(log_prob_fn: _UnnormLogProb):
@@ -101,3 +101,66 @@ def construct_systematic_bitflip_kernel(log_prob_fn: _UnnormLogProb):
         return new_state
 
     return kernel
+
+
+def _gibbs_blockflip(
+    key: jax.Array,
+    log_prob_fn: _UnnormLogProb,
+    y: _DataPoint,
+    sites: Int[Array, " size"],
+) -> _DataPoint:
+    """Performs a blocked Gibbs update, jointly
+    resampling all bits at `sites`.
+
+    Note:
+        This requires `2**len(sites)` evaluations
+        of the log-probability (and similar memory),
+        so that not too many sites should be jointly
+        updated.
+    """
+    # Generate all possible configurations for the block
+    block_size = sites.shape[0]
+    all_configs = generate_all_binary_vectors(block_size)
+
+    # Generate (unnormalized) log-probs for all possible configurations:
+    def logp(config):
+        y_candidate = y.at[sites].set(config)
+        return log_prob_fn(y_candidate)
+
+    logits = jax.vmap(logp)(all_configs)
+
+    # Select the new configuration
+    new_block_idx = jax.random.categorical(key, logits=logits)
+    new_config = all_configs[new_block_idx]
+
+    return y.at[sites].set(new_config)
+
+
+def construct_random_blockflip_kernel(log_prob_fn: _UnnormLogProb, block_size: int):
+    """Constructs a kernel resampling a random block of size `block_size`.
+
+    Note:
+        One requires `2**block_size` evaluations of the log-probability function
+        (and similar memory complexity), so that only relatively small blocks
+        can be used.
+    """
+
+    def kernel(key, y):
+        """Kernel flipping a random bit."""
+        G = y.shape[0]
+
+        key1, key2 = jrandom.split(key)
+        sites = jrandom.choice(
+            key1,
+            G,
+            shape=(block_size,),
+            replace=False,
+        )
+        return _gibbs_blockflip(
+            key=key2,  # type: ignore
+            log_prob_fn=log_prob_fn,
+            y=y,
+            sites=sites,
+        )
+
+    return jax.jit(kernel)
