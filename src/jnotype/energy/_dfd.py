@@ -54,7 +54,7 @@ def discrete_fisher_divergence(log_q: LogProbFn, ys: DataSet) -> Float[Array, " 
 def _besag_pseudolikelihood_onepoint(
     log_q: LogProbFn, y: DataPoint
 ) -> Float[Array, " "]:
-    """Calculates Julian Besag's pseudolikelihood on a single data point.
+    """Calculates Julian Besag's pseudo-log-likelihood on a single data point.
 
     Namely,
     $$
@@ -76,9 +76,9 @@ def besag_pseudolikelihood_sum(
     log_q: LogProbFn,
     ys: DataSet,
 ) -> Float[Array, " "]:
-    """Besag pseudolikelihood calculated over the whole data set.
+    """Besag pseudo-log-likelihood calculated over the whole data set.
 
-    Note that pseudolikelihood is additive.
+    Note that pseudo-log-likelihood is additive.
     """
     n_points = ys.shape[0]
     return n_points * besag_pseudolikelihood_mean(log_q, ys)
@@ -88,10 +88,10 @@ def besag_pseudolikelihood_mean(
     log_q: LogProbFn,
     ys: DataSet,
 ) -> Float[Array, " "]:
-    """Average Besag pseudolikelihood.
+    """Average Besag pseudo-log-likelihood.
 
     Note:
-        As the pseudolikelihood is additive, for generalised
+        As the pseudo-log-likelihood is additive, for generalised
         Bayesian inference one should multiply by the data set size.
 
     See Also:
