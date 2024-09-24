@@ -38,7 +38,8 @@ class AbstractGibbsSampler(abc.ABC):
         self.steps = steps
         self.verbose = verbose
 
-    @abc.abstractclassmethod
+    @classmethod
+    @abc.abstractmethod
     def dimensions(cls) -> dict:
         """Returns dictionary describing
         the dimensions, e.g.,:
