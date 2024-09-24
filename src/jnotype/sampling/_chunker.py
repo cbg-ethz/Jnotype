@@ -76,6 +76,8 @@ class ListDataset(DatasetInterface):
 
     @property
     def dataset(self) -> xr.Dataset:
+        """Generates an xarray data set."""
+
         attrs = {
             "thinning": self.thinning,
         } | self._attrs
