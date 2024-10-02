@@ -2,7 +2,9 @@
 
 import jax.numpy as jnp
 from jaxtyping import Float, Int, Array
-from typing import NamedTuple
+from typing import NamedTuple, Tuple
+
+import jnotype.exclusivity._bernoulli_mixtures as bmm
 
 
 def _bincount(counts: Int[Array, " counts"], n_genes: int) -> Int[Array, " n_genes+1"]:
@@ -85,8 +87,8 @@ def get_loglikelihood_function(Y: Int[Array, "n_samples n_genes"]):
 _FloatLike = Float[Array, " "]
 
 
-class ParameterEstimates(NamedTuple):
-    """Parameter estimates in the mutual exclusivity model.
+class Parameters(NamedTuple):
+    """Parameters in the mutual exclusivity model.
 
     Parameters:
         false_positive_rate: false positive rate
@@ -99,7 +101,7 @@ class ParameterEstimates(NamedTuple):
     impurity: _FloatLike  # Delta parameter, impurity
 
 
-def estimate_no_errors(Y: Int[Array, "n_samples n_genes"]) -> ParameterEstimates:
+def estimate_no_errors(Y: Int[Array, "n_samples n_genes"]) -> Parameters:
     """Estimates the parameter values assuming no errors in the data,
     i.e., FPR = FNR = 0."""
     zero = jnp.asarray(0.0)
@@ -112,9 +114,34 @@ def estimate_no_errors(Y: Int[Array, "n_samples n_genes"]) -> ParameterEstimates
     numerator = jnp.sum(jnp.arange(n_genes + 1) * statistic) - n_samples * coverage
     denominator = (n_genes - 1) * n_samples * coverage
 
-    return ParameterEstimates(
+    return Parameters(
         false_positive_rate=zero,
         false_negative_rate=zero,
         coverage=coverage,
         impurity=numerator / denominator,
+    )
+
+
+def convert_to_bernoulli_mixture(parameters: Parameters, n_genes: int) -> Tuple[
+    Float[Array, " n_genes+1"],
+    Float[Array, "n_genes+1 n_genes"],
+]:
+    """Generates the parameters of the equivalent Bernoulli mixture model,
+    with `n_genes+1` components."""
+    coverage = parameters.coverage
+
+    weights = jnp.concatenate(
+        [jnp.array([1.0 - coverage]), jnp.full((n_genes,), coverage / n_genes)]
+    )
+
+    impurity = parameters.impurity
+    components = jnp.concatenate(
+        [jnp.zeros((1, n_genes)), impurity + (1.0 - impurity) * jnp.eye(n_genes)],
+        axis=0,
+    )
+
+    return weights, bmm.adjust_mixture_components_for_noise(
+        mixture_components=components,
+        false_positive_rate=parameters.false_positive_rate,
+        false_negative_rate=parameters.false_negative_rate,
     )
