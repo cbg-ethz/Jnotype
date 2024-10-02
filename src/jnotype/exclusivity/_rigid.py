@@ -2,7 +2,7 @@
 
 import jax.numpy as jnp
 from jaxtyping import Float, Int, Array
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Tuple, Union
 
 import jnotype.exclusivity._bernoulli_mixtures as bmm
 
@@ -19,7 +19,10 @@ def calculate_summary_statistic(
     return _bincount(counts=Y.sum(axis=-1), n_genes=Y.shape[-1])
 
 
-def _calculate_d(alpha: float, beta: float, delta: float) -> float:
+_FloatLike = Union[float, Float[Array, " "]]
+
+
+def _calculate_d(alpha: _FloatLike, beta: _FloatLike, delta: _FloatLike) -> _FloatLike:
     """Calculates auxiliary parameter d."""
     return delta * (1.0 - beta) + (1.0 - delta) * alpha
 
@@ -27,11 +30,11 @@ def _calculate_d(alpha: float, beta: float, delta: float) -> float:
 def calculate_loglikelihood_single_point(
     k: int,
     G: int,
-    alpha: float,
-    beta: float,
-    gamma: float,
-    delta: float,
-) -> float:
+    alpha: _FloatLike,
+    beta: _FloatLike,
+    gamma: _FloatLike,
+    delta: _FloatLike,
+) -> _FloatLike:
     """Calculates loglikelihood on a single point with `k` mutations."""
     log_term1 = jnp.log1p(-gamma) + k * jnp.log(alpha) + (G - k) * jnp.log1p(-alpha)
 
@@ -51,42 +54,6 @@ def calculate_loglikelihood_single_point(
     return jnp.logaddexp(log_term1, log_term2)
 
 
-def get_loglikelihood_function_from_counts(counts: Int[Array, " n_genes+1"]):
-    """Factory for the likelihood function,
-    which uses an easy-to-calculate
-    summary statistic of the data,
-    improving the computation speed."""
-    G = counts.shape[0] - 1
-
-    ks = jnp.arange(counts.shape[0])
-    assert ks.shape == counts.shape
-
-    def f(alpha: float, beta: float, gamma: float, delta: float) -> float:
-        lls = calculate_loglikelihood_single_point(
-            k=ks,  # type: ignore
-            G=G,
-            alpha=alpha,
-            beta=beta,
-            gamma=gamma,
-            delta=delta,
-        )
-        return jnp.dot(counts, lls)
-
-    return f
-
-
-def get_loglikelihood_function(Y: Int[Array, "n_samples n_genes"]):
-    """Factory for the likelihood function,
-    which uses an easy-to-calculate
-    summary statistic of the data,
-    improving the computation speed."""
-    counts = calculate_summary_statistic(Y)
-    return get_loglikelihood_function_from_counts(counts)
-
-
-_FloatLike = Float[Array, " "]
-
-
 class Parameters(NamedTuple):
     """Parameters in the mutual exclusivity model.
 
@@ -99,6 +66,56 @@ class Parameters(NamedTuple):
     false_negative_rate: _FloatLike  # Beta, false negative rate
     coverage: _FloatLike  # Gamma parameter, coverage
     impurity: _FloatLike  # Delta parameter, impurity
+
+
+def get_loglikelihood_function_from_counts(
+    counts: Int[Array, " n_genes+1"], from_params: bool = False
+):
+    """Factory for the likelihood function,
+    which uses an easy-to-calculate
+    summary statistic of the data,
+    improving the computation speed."""
+    G = counts.shape[0] - 1
+
+    ks = jnp.arange(counts.shape[0])
+    assert ks.shape == counts.shape
+
+    def f(
+        alpha: _FloatLike, beta: _FloatLike, gamma: _FloatLike, delta: _FloatLike
+    ) -> _FloatLike:
+        lls = calculate_loglikelihood_single_point(
+            k=ks,  # type: ignore
+            G=G,
+            alpha=alpha,
+            beta=beta,
+            gamma=gamma,
+            delta=delta,
+        )
+        return jnp.dot(counts, lls)
+
+    def g(params: Parameters):
+        return f(
+            alpha=params.false_positive_rate,
+            beta=params.false_negative_rate,
+            gamma=params.coverage,
+            delta=params.impurity,
+        )
+
+    if from_params:
+        return g
+    else:
+        return f
+
+
+def get_loglikelihood_function(
+    Y: Int[Array, "n_samples n_genes"], from_params: bool = False
+):
+    """Factory for the likelihood function,
+    which uses an easy-to-calculate
+    summary statistic of the data,
+    improving the computation speed."""
+    counts = calculate_summary_statistic(Y)
+    return get_loglikelihood_function_from_counts(counts, from_params=from_params)
 
 
 def estimate_no_errors(Y: Int[Array, "n_samples n_genes"]) -> Parameters:

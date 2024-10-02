@@ -4,13 +4,16 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from jaxtyping import Float, Int, Array
+from typing import Union
+
+_FloatLike = Union[float, Float[Array, " "]]
 
 
 def add_bernoulli_noise(
     key: jax.Array,
     Y: Int[Array, " *dimensions"],
-    false_positive_rate: float,
-    false_negative_rate: float,
+    false_positive_rate: _FloatLike,
+    false_negative_rate: _FloatLike,
 ) -> Int[Array, " *dimensions"]:
     """Adds false positives and false negatives to the data."""
     # Generate random numbers uniformly between 0 and 1
@@ -56,8 +59,8 @@ def sample_bernoulli_mixture(
 
 def adjust_mixture_components_for_noise(
     mixture_components: Float[Array, " *dimensions"],
-    false_positive_rate: float,
-    false_negative_rate: float,
+    false_positive_rate: _FloatLike,
+    false_negative_rate: _FloatLike,
 ) -> Float[Array, " *dimensions"]:
     """Adjusts a Bernoulli mixture model by false positive and negative rates."""
     compl = 1.0 - (false_positive_rate + false_negative_rate)
@@ -68,7 +71,7 @@ def loglikelihood_bernoulli_mixture(
     Y: Int[Array, "*dimensions n_features"],
     mixture_weights: Float[Array, " n_components"],
     mixture_components: Float[Array, "n_components n_features"],
-) -> float:
+) -> _FloatLike:
     """Calculates the loglikelihood in a Bernoulli mixture model."""
     # Compute log probabilities of the mixture components
     log_p = jnp.log(mixture_components)  # Shape: (n_components, n_features)

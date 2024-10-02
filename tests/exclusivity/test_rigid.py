@@ -52,8 +52,8 @@ def test_convert_to_bernoulli_mixture(n_genes: int, params: muex.Parameters) -> 
 
     mixture_components_ = bmm.adjust_mixture_components_for_noise(
         mixture_components=jnp.asarray(_comp),
-        false_positive_rate=params.false_positive_rate,  # type: ignore
-        false_negative_rate=params.false_negative_rate,  # type: ignore
+        false_positive_rate=params.false_positive_rate,
+        false_negative_rate=params.false_negative_rate,
     )
 
     npt.assert_allclose(weights, weights_)
@@ -84,14 +84,10 @@ def test_loglikelihood(
     Y = jax.random.bernoulli(
         jax.random.PRNGKey(seed), p=0.1, shape=(n_samples, n_genes)
     )
-    loglikelihood_fn = jax.jit(muex.get_loglikelihood_function(Y))
+    loglikelihood_fn = jax.jit(muex.get_loglikelihood_function(Y, from_params=True))
 
-    ll1 = loglikelihood_fn(
-        params.false_positive_rate,
-        params.false_negative_rate,
-        params.coverage,
-        params.impurity,
-    )
+    ll1 = loglikelihood_fn(params)
+
     weights, components = muex.convert_to_bernoulli_mixture(
         parameters=params, n_genes=n_genes
     )
