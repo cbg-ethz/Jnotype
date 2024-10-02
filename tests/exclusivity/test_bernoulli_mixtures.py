@@ -4,15 +4,12 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 
 import jnotype.exclusivity._bernoulli_mixtures as bmm
-from jnotype._utils import JAXRNG
 
 
 @pytest.mark.parametrize("n_genes", [3, 5])
 @pytest.mark.parametrize("seed", [42])
 def test_likelihood(seed: int, n_genes: int) -> None:
-    rng = JAXRNG(jax.random.PRNGKey(seed))
-
-    Y1 = jax.random.bernoulli(rng.key, p=0.6, shape=(2, 7, n_genes))
+    Y1 = jax.random.bernoulli(jax.random.PRNGKey(seed), p=0.6, shape=(2, 7, n_genes))
     Y2 = jnp.vstack(Y1)
     assert Y2.shape == (Y1.shape[0] * Y1.shape[1], Y1.shape[2])
 

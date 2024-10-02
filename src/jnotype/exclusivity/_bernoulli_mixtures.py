@@ -54,10 +54,20 @@ def sample_bernoulli_mixture(
     return samples
 
 
+def adjust_mixture_components_for_noise(
+    mixture_components: Float[Array, " *dimensions"],
+    false_positive_rate: float,
+    false_negative_rate: float,
+) -> Float[Array, " *dimensions"]:
+    """Adjusts a Bernoulli mixture model by false positive and negative rates."""
+    compl = 1.0 - (false_positive_rate + false_negative_rate)
+    return false_positive_rate + compl * mixture_components
+
+
 def loglikelihood_bernoulli_mixture(
     Y: Int[Array, "*dimensions n_features"],
     mixture_weights: Float[Array, " n_components"],
-    mixture_components: Float[Array, " n_components n_features"],
+    mixture_components: Float[Array, "n_components n_features"],
 ) -> float:
     """Calculates the loglikelihood in a Bernoulli mixture model."""
     # Compute log probabilities of the mixture components
