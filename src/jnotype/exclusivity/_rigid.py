@@ -12,7 +12,7 @@ def _bincount(counts: Int[Array, " counts"], n_genes: int) -> Int[Array, " n_gen
     return jnp.bincount(counts, minlength=n_genes + 1, length=n_genes + 1)
 
 
-def calculate_summary_statistic(
+def _calculate_summary_statistic(
     Y: Int[Array, "n_samples n_genes"]
 ) -> Int[Array, " n_genes+1"]:
     """Calculates the summary statistic, counting the occurences of 1s."""
@@ -27,7 +27,7 @@ def _calculate_d(alpha: _FloatLike, beta: _FloatLike, delta: _FloatLike) -> _Flo
     return delta * (1.0 - beta) + (1.0 - delta) * alpha
 
 
-def calculate_loglikelihood_single_point(
+def _calculate_loglikelihood_single_point(
     k: int,
     G: int,
     alpha: _FloatLike,
@@ -83,7 +83,7 @@ def get_loglikelihood_function_from_counts(
     def f(
         alpha: _FloatLike, beta: _FloatLike, gamma: _FloatLike, delta: _FloatLike
     ) -> _FloatLike:
-        lls = calculate_loglikelihood_single_point(
+        lls = _calculate_loglikelihood_single_point(
             k=ks,  # type: ignore
             G=G,
             alpha=alpha,
@@ -114,7 +114,7 @@ def get_loglikelihood_function(
     which uses an easy-to-calculate
     summary statistic of the data,
     improving the computation speed."""
-    counts = calculate_summary_statistic(Y)
+    counts = _calculate_summary_statistic(Y)
     return get_loglikelihood_function_from_counts(counts, from_params=from_params)
 
 
@@ -123,7 +123,7 @@ def estimate_no_errors(Y: Int[Array, "n_samples n_genes"]) -> Parameters:
     i.e., FPR = FNR = 0."""
     zero = jnp.asarray(0.0)
 
-    statistic = calculate_summary_statistic(Y)
+    statistic = _calculate_summary_statistic(Y)
     n_samples, n_genes = Y.shape[0], Y.shape[1]
 
     coverage = 1 - statistic[0] / n_samples
