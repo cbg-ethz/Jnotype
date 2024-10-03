@@ -5,6 +5,7 @@ Appearing themes should be refactored and placed
 into separate modules."""
 
 import jax
+import numpy as np
 
 
 class JAXRNG:
@@ -38,3 +39,20 @@ class JAXRNG:
     def __str__(self) -> str:
         """Used by the str() method."""
         return repr(self)
+
+
+def order_genotypes(mutations, reverse: bool = False):
+    """Finds lexicographic order on the provided genotypes,
+    e.g., for plotting purposes.
+
+    Args:
+        mutations: genotypes, (n_samples, n_genes)
+        reverse: whether to swap the order or not
+
+    Returns:
+        array (n_samples,) representing the indices of the order
+    """
+    ord = np.argsort(list(map(lambda x: "".join(map(str, x)), mutations)))
+    if reverse:
+        ord = ord[::-1]
+    return ord
