@@ -92,7 +92,7 @@ rule fit_muex:
                     p.coverage,
                     p.impurity,
                 ])
-            trajectory = jnp.stack([wrap_params(p) for p in trajectory])
+            trajectory = jnp.stack([wrap_params(p.new_params) for p in trajectory])
             np.save(str(output.inits[i]), np.asarray(trajectory))
 
 
@@ -116,7 +116,16 @@ def plot_grid(ax, grid, xrange, yrange, **kwargs):
     )
 
 def plot_trajectory(ax, xs, ys, chain_num):
-    ax.plot(xs, ys, c=f"C{chain_num}", marker=".", markersize=3, linewidth=0.3)
+    cmap = plt.get_cmap('Wistia')
+
+    # Normalize chain_num to be between 0 and 1
+    norm = plt.Normalize(vmin=-1, vmax=N_INITS)
+    normalized_chain_num = norm(chain_num)
+
+    # Get color from the colormap
+    color = cmap(normalized_chain_num)
+    
+    ax.plot(xs, ys, c=color, marker=".", markersize=1, linewidth=0.4, alpha=0.8)
 
 
 rule plot_loglikelihood:
@@ -161,7 +170,7 @@ rule plot_loglikelihood:
         vmax = max(grid_rates.max(), grid_params.max(), ll_perfect) + 0.01
         vmin = min(ll_perfect, vmax - 5) - 0.01
 
-        fig, axs = subplots_from_axsize(axsize=([2, 4/3, 4/3, 0.1], 1.09), wspace=[0.3, 0.7, 0.1], left=0.3, bottom=0.5, top=0.3, right=0.7)
+        fig, axs = subplots_from_axsize(axsize=([2, 4/3, 4/3, 0.1], 1.1), wspace=[0.3, 0.7, 0.1], left=0.3, bottom=0.5, top=0.3, right=0.7)
 
         # gridspec = {'width_ratios': [2, 1, 1, 0.2]}
         # fig, axs = plt.subplots(1, 4, figsize=(13, 4), gridspec_kw=gridspec)

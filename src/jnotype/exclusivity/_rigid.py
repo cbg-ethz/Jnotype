@@ -361,15 +361,21 @@ def em_algorithm(
     counts = _calculate_summary_statistic(Y)
     k = jnp.arange(Y.shape[-1] + 1)
 
-    trajectory = [params0]
+    trajectory = [
+        _EMStepResult(
+            new_params=params0,
+            new_loglikelihood=-float("inf"),
+            old_loglikelihood=-float("inf"),
+        )
+    ]
     params = params0
     for _ in range(max_iter):
         result = em_step(params=params, k=k, counts=counts)
 
         params = result.new_params
-        trajectory.append(params)
+        trajectory.append(result)
 
         if abs(result.new_loglikelihood - result.old_loglikelihood) < threshold:
             break
 
-    return trajectory[-1], trajectory
+    return trajectory[-1].new_params, trajectory
