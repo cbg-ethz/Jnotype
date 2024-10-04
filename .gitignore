@@ -6,6 +6,7 @@ generated/
 *.zip
 *.tar.*
 *.pdf
+*.svg
 *.png
 *.csv
 *.yaml
