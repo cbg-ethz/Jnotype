@@ -10,6 +10,11 @@ matplotlib.use("Agg")
 from subplots_from_axsize import subplots_from_axsize
 import seaborn as sns
 
+import numpyro
+import numpyro.diagnostics as diagnostics
+import numpyro.distributions as dist
+from numpyro.infer import MCMC, NUTS
+
 from jnotype.checks import calculate_quantiles
 from jnotype.exclusivity import muex
 from jnotype._utils import order_genotypes
@@ -53,7 +58,7 @@ rule all:
     input: 
         comparisons = expand("{scenario}/summary_statistic_comparison.pdf", scenario=GENESETS.keys()),
         genotype_plots = expand("{scenario}/genotypes.pdf", scenario=GENESETS.keys()),
-
+        posterior_plot = expand("{scenario}/muex_bayes/posterior.pdf", scenario=GENESETS.keys()),
 
 rule prepare_data:
     output: "{scenario}/data.csv"
@@ -101,6 +106,128 @@ rule mle_independent:
         rng = np.random.default_rng(42)
         X = rng.binomial(1, p=pi_, size=(N_SIMULATED, n_patients, n_genes))
         np.save(file=output.artificial, arr=X, allow_pickle=False)
+
+
+rule visualise_bayes_muex:
+    input:
+        prior = "{scenario}/muex_bayes/prior.npz",
+        posterior = "{scenario}/muex_bayes/posterior.npz",
+    output:
+        prior_visualisation = "{scenario}/muex_bayes/prior.pdf",
+        posterior_visualisation = "{scenario}/muex_bayes/posterior.pdf",
+        comparison_visualisation = "{scenario}/muex_bayes/comparison_prior_and_posterior.pdf",
+    run:
+        prior_samples = np.load(input.prior)
+        posterior_samples = np.load(input.posterior)
+        
+        vars = [
+            ("alpha", "FPR $\\alpha$"),
+            ("beta", "FNR $\\beta$"),
+            ("gamma", "Coverage $\\gamma$"),
+            ("delta", "Impurity $\\xi$"),
+        ]
+
+        def get_fig_and_axes():
+            return subplots_from_axsize(axsize=([1.2, 1.2, 1.2, 1.2], 1), hspace=0.02, bottom=0.5)
+        
+        def visualise_samples(samples_dict, color, axs=None):
+            # Plot the prior and the posterior
+            if axs is None:
+                fig, axs = get_fig_and_axes()
+            else:
+                fig = None
+
+            for ax, (var_name, label) in zip(axs, vars):
+                samples = samples_dict[var_name]
+                ax.hist(samples, bins=30, density=True, alpha=0.7, color=color, edgecolor=None)
+                ax.spines[["top", "left", "right"]].set_visible(False)
+                ax.set_yticks([])
+                ax.set_xlabel(label)
+            return fig
+
+        visualise_samples(prior_samples, "salmon").savefig(output.prior_visualisation)
+        visualise_samples(posterior_samples, "skyblue").savefig(output.posterior_visualisation)
+
+        fig, axs = get_fig_and_axes()
+        visualise_samples(prior_samples, "salmon", axs=axs)
+        visualise_samples(posterior_samples, "skyblue", axs=axs)
+        fig.savefig(output.comparison_visualisation)
+
+
+rule bayes_muex:
+    input: "{scenario}/data.csv"
+    output:
+        prior = "{scenario}/muex_bayes/prior.npz",
+        posterior = "{scenario}/muex_bayes/posterior.npz",
+        artificial = "{scenario}/muex_bayes/artificial.npy",
+        prior_summary = "{scenario}/muex_bayes/prior_summary.csv",
+        posterior_summary = "{scenario}/muex_bayes/posterior_summary.csv",
+    run:
+        eps = 1e-3
+        def model(Y, posterior: bool):
+            alpha = numpyro.sample("alpha", dist.TruncatedNormal(loc=0, scale=0.1, low=eps, high=0.3))
+            beta = numpyro.sample("beta", dist.TruncatedNormal(loc=0, scale=0.1, low=eps, high=0.3))
+            gamma = numpyro.sample("gamma", dist.Uniform(low=eps, high=1-eps))
+            delta = numpyro.sample("delta", dist.TruncatedNormal(loc=0, scale=0.2, low=eps, high=1-eps))
+            
+            if posterior:
+                ll_fn = muex.get_loglikelihood_function(Y, from_params=False)
+                numpyro.factor("loglikelihood", ll_fn(alpha, beta, gamma, delta))
+
+        df = pd.read_csv(str(input), index_col=0)
+        gene_names = df.columns
+        matrix = df.values
+
+        key = jax.random.PRNGKey(42)
+        key, subkey_prior, subkey_posterior = jax.random.split(key, 3)
+
+        # Sample from the prior
+        
+        _mcmc_chains = 4
+        _mcmc_warmup = 1500
+        _mcmc_samples = 1000
+
+        prior_kernel = NUTS(model)  #, step_size=0.05, max_tree_depth=15)
+        mcmc_prior = MCMC(prior_kernel, num_warmup=_mcmc_warmup, num_samples=_mcmc_samples, num_chains=_mcmc_chains)
+        mcmc_prior.run(subkey_prior, Y=None, posterior=False)
+        prior_samples = mcmc_prior.get_samples()
+        np.savez(output.prior, **prior_samples)
+
+        summary_dict = diagnostics.summary(mcmc_prior.get_samples(group_by_chain=True), group_by_chain=True)
+        pd.DataFrame(summary_dict).to_csv(output.prior_summary, index=True)
+
+
+        posterior_kernel = NUTS(model, step_size=0.05, max_tree_depth=15)
+        mcmc_posterior = MCMC(posterior_kernel, num_warmup=_mcmc_warmup, num_samples=_mcmc_samples, num_chains=_mcmc_chains)
+        mcmc_posterior.run(subkey_posterior, Y=matrix, posterior=True)
+        posterior_samples = mcmc_posterior.get_samples()
+        np.savez(output.posterior, **posterior_samples)
+
+        summary_dict = diagnostics.summary(mcmc_posterior.get_samples(group_by_chain=True), group_by_chain=True)
+        pd.DataFrame(summary_dict).to_csv(output.posterior_summary, index=True)
+
+        # Generate samples from posterior predictive
+        key, subkey = jax.random.split(key)
+        subsampled_indices = jax.random.choice(subkey, jnp.arange(_mcmc_samples), shape=(N_SIMULATED,), replace=False)
+
+        def generate_sample(k, idx):
+            alpha = posterior_samples["alpha"][idx]
+            beta = posterior_samples["beta"][idx]
+            gamma = posterior_samples["gamma"][idx]
+            delta = posterior_samples["delta"][idx]
+            weights, components = muex.convert_to_bernoulli_mixture(muex.Parameters(
+                false_positive_rate=alpha,
+                false_negative_rate=beta,
+                coverage=gamma,
+                impurity=delta,
+            ), n_genes=matrix.shape[1])
+            return bmm.sample_bernoulli_mixture(k, n_samples=matrix.shape[0], mixture_weights=weights, mixture_components=components)
+
+        keys = jax.random.split(key, N_SIMULATED)
+
+        samples = jax.vmap(generate_sample)(keys, subsampled_indices)
+        np.save(output.artificial, samples)
+
 
 
 rule mle_muex:
@@ -186,6 +313,7 @@ rule plot_mle_comparison:
         data = "{scenario}/data.csv",
         independent = "{scenario}/independence_mle/artificial.npy",
         muex_model = "{scenario}/muex_mle/artificial.npy",
+        muex_bayes = "{scenario}/muex_bayes/artificial.npy",
     output: "{scenario}/summary_statistic_comparison.pdf"
     run:
         fig, axs = subplots_from_axsize(axsize=([5/3, 5/3, 2], 1.1), wspace=[0.5, 0.5], left=0.5, bottom=0.55, top=0.3, right=1.0)
@@ -200,6 +328,7 @@ rule plot_mle_comparison:
         model_spec = [
             ("Ind.", "maroon", input.independent),
             ("Exc.", "darkblue", input.muex_model),
+            ("Bay.", "green", input.muex_bayes),
         ]
 
         # --- First plot: bincount ---
