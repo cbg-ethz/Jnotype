@@ -62,9 +62,21 @@ def adjust_mixture_components_for_noise(
     false_positive_rate: _FloatLike,
     false_negative_rate: _FloatLike,
 ) -> Float[Array, " *dimensions"]:
-    """Adjusts a Bernoulli mixture model by false positive and negative rates."""
+    """Adjusts a noiseless Bernoulli mixture model
+    by adding false positive and negative rates."""
     compl = 1.0 - (false_positive_rate + false_negative_rate)
     return false_positive_rate + compl * mixture_components
+
+
+def adjust_mixture_components_removing_noise(
+    mixture_components: Float[Array, " *dimensions"],
+    false_positive_rate: _FloatLike,
+    false_negative_rate: _FloatLike,
+) -> Float[Array, " *dimensions"]:
+    """Recovers noiseless model components from a noisy
+    Bernoulli mixture model."""
+    compl = 1.0 - (false_positive_rate + false_negative_rate)
+    return (mixture_components - false_positive_rate) / compl
 
 
 def loglikelihood_bernoulli_mixture(
@@ -104,3 +116,107 @@ def loglikelihood_bernoulli_mixture(
     total_log_likelihood = jnp.sum(log_likelihood_per_sample)
 
     return total_log_likelihood
+
+
+def calculate_logmarginal(
+    y: Int[Array, " n_loci"],
+    indices: Int[Array, " n_loci"],
+    mixture_weights: Float[Array, " n_components"],
+    mixture_components: Float[Array, "n_components n_genes"],
+) -> _FloatLike:
+    """Calculates
+
+    log P(Y_indices = y | weights, components).
+
+    Args:
+        y: values taken at the loci
+        indices: specified loci. All the other loci are marginalized out
+    """
+    return loglikelihood_bernoulli_mixture(
+        Y=y[None, :],
+        mixture_weights=mixture_weights,
+        mixture_components=mixture_components[:, indices],
+    )
+
+
+def log_p_cond(
+    *,
+    response_value: int,
+    condition_value: int,
+    response_index: int,
+    condition_index: int,
+    mixture_weights: Float[Array, " n_components"],
+    mixture_components: Float[Array, "n_components n_genes"],
+) -> _FloatLike:
+    """Evaluates the conditional log-probability
+    log P(Y[response_index] = response_value | Y[condition_index] = condition_value)
+    """
+    # log P(Y[condition_index] = condition_value)
+    log_pcond = calculate_logmarginal(
+        y=jnp.array([condition_value], dtype=int),
+        indices=jnp.array([condition_index], dtype=int),
+        mixture_weights=mixture_weights,
+        mixture_components=mixture_components,
+    )
+    # log P(Y[both indices] = both values)
+    log_pjoint = calculate_logmarginal(
+        y=jnp.array([response_value, condition_value], dtype=int),
+        indices=jnp.array([response_index, condition_index], dtype=int),
+        mixture_weights=mixture_weights,
+        mixture_components=mixture_components,
+    )
+    # Conditional log-probability
+    return log_pjoint - log_pcond
+
+
+def _conditional_probability_difference(
+    response: int,
+    conditioning: int,
+    mixture_weights: Float[Array, " n_components"],
+    mixture_components: Float[Array, "n_components n_genes"],
+) -> _FloatLike:
+    """Estimates the difference between conditional probabilities:
+
+    P(response=1 | conditioning = 1) - P(response=1 | conditioning = 0)
+    """
+    log_p11 = log_p_cond(
+        response_value=1,
+        condition_value=1,
+        response_index=response,
+        condition_index=conditioning,
+        mixture_weights=mixture_weights,
+        mixture_components=mixture_components,
+    )
+    log_p10 = log_p_cond(
+        response_value=1,
+        condition_value=0,
+        response_index=response,
+        condition_index=conditioning,
+        mixture_weights=mixture_weights,
+        mixture_components=mixture_components,
+    )
+    return jnp.exp(log_p11) - jnp.exp(log_p10)
+
+
+def logodds_ratio(
+    locus1: int,
+    locus2: int,
+    mixture_weights: Float[Array, " n_components"],
+    mixture_components: Float[Array, "n_components n_genes"],
+) -> _FloatLike:
+    """Calculates the logodds ratio at the specified loci,
+    which measures exclusivity and co-occurence."""
+
+    def log_tau(value1: int, value2: int) -> _FloatLike:
+        values = jnp.asarray([value1, value2], dtype=int)
+        indices = jnp.asarray([locus1, locus2], dtype=int)
+        return calculate_logmarginal(
+            y=values,
+            indices=indices,
+            mixture_weights=mixture_weights,
+            mixture_components=mixture_components,
+        )
+
+    log_numerator = log_tau(1, 0) + log_tau(0, 1)
+    log_denominator = log_tau(0, 0) + log_tau(1, 1)
+    return log_numerator - log_denominator
