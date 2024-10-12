@@ -2,18 +2,24 @@
 # = Experiment showing the behaviour of maximum likelihood estimate  =
 # = when the sample size is too small                                =
 # ====================================================================
-from scipy import optimize
 import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.patches as mpatches
 matplotlib.use("Agg")
 import seaborn as sns
 from subplots_from_axsize import subplots_from_axsize
 
 import json
 
+import pandas as pd
 import numpy as np
 import jax
 import jax.numpy as jnp
+
+import numpyro
+import numpyro.diagnostics as diagnostics
+import numpyro.distributions as dist
+from numpyro.infer import MCMC, NUTS
 
 from jnotype.exclusivity import muex
 from jnotype.exclusivity import bmm
@@ -22,79 +28,10 @@ from jnotype._utils import order_genotypes
 workdir: "generated/exclusivity/small_sample"
 
 
-rule all:
-    input: ["loglikelihood.pdf", "em_summary.json"]
-
+N_INITS: int = 20
 GROUND_TRUTH_PARAMETERS = muex.Parameters(false_positive_rate=0.05, false_negative_rate=0.05, coverage=0.6, impurity=0.05)
 N_GENES = 5
 N_SAMPLES = 200
-
-rule sample_data_mutual_exclusivity:
-    output: "data.npy"
-    run:
-        weights, components = muex.convert_to_bernoulli_mixture(GROUND_TRUTH_PARAMETERS, n_genes=N_GENES)
-        data = bmm.sample_bernoulli_mixture(
-            key=jax.random.PRNGKey(2024),
-            n_samples=N_SAMPLES,
-            mixture_weights=weights,
-            mixture_components=components,
-        )
-
-        data = np.asarray(data)
-        np.save(str(output), data, allow_pickle=False)
-
-N_INITS = 7
-
-rule fit_muex:
-    input: "data.npy"
-    output:
-        inits = [f"em/init{i}.npy" for i in range(N_INITS)]
-    run:
-        data = np.load(str(input), allow_pickle=False)
-        
-        initial_params_list = []
-
-        initial_params = muex.estimate_no_errors(data)
-        initial_params = muex.Parameters(
-            false_positive_rate=0.02,
-            false_negative_rate=0.02,
-            coverage=initial_params.coverage,
-            impurity=initial_params.impurity,
-        )
-        initial_params_list.append(initial_params)
-
-        additional_params = [
-            [0.05, 0.05, 0.7, 0.1],
-            [0.1, 0.2, 0.5, 0.3],
-            [0.1, 0.1, 0.3, 0.05],
-            [0.01, 0.01, 0.8, 0.01],
-            [0.08, 0.08, 0.5, 0.15],
-            [0.2, 0.05, 0.5, 0.1],
-        ]
-
-        for p in additional_params:
-            initial_params = muex.Parameters(
-                false_positive_rate=p[0],
-                false_negative_rate=p[1],
-                coverage=p[2],
-                impurity=p[3],
-            )
-            initial_params_list.append(initial_params)
-
-        trajectories = []
-        for i, initial_params in enumerate(initial_params_list):
-            _, trajectory = muex.em_algorithm(Y=data, params0=initial_params, max_iter=1000, threshold=1e-5)
-            
-            def wrap_params(p):
-                return jnp.asarray([
-                    p.false_positive_rate,
-                    p.false_negative_rate,
-                    p.coverage,
-                    p.impurity,
-                ])
-            trajectory = jnp.stack([wrap_params(p.new_params) for p in trajectory])
-            np.save(str(output.inits[i]), np.asarray(trajectory))
-
 
 def make_grid(fn, xrange, yrange, steps: int = 101):
     xs = jnp.linspace(*xrange, steps)
@@ -125,7 +62,118 @@ def plot_trajectory(ax, xs, ys, chain_num):
     # Get color from the colormap
     color = cmap(normalized_chain_num)
     
-    ax.plot(xs, ys, c=color, marker=".", markersize=1, linewidth=0.4, alpha=0.8)
+    # ax.plot(xs, ys, c=color, marker=".", markersize=1, linewidth=0.4, alpha=0.8)
+
+    ax.scatter(xs[-1:], ys[-1:], c=color, marker=".", s=1)
+
+
+def muex_model(
+    Y,
+    posterior: bool,
+):
+    eps = 1e-3
+    alpha = numpyro.sample("alpha", dist.TruncatedNormal(loc=0.0, scale=0.08, low=eps, high=0.2))
+    beta = numpyro.sample("beta", dist.TruncatedNormal(loc=0.0, scale=0.08, low=eps, high=0.2))
+    coverage = numpyro.sample("coverage", dist.Uniform(low=eps, high=1-eps))
+    impurity = numpyro.sample("impurity", dist.TruncatedNormal(loc=0.0, scale=0.2, low=eps, high=1-eps))
+
+    params = muex.Parameters(
+        false_positive_rate=alpha,
+        false_negative_rate=beta,
+        coverage=coverage,
+        impurity=impurity,
+    )
+    
+    if posterior:
+        ll = muex.get_loglikelihood_function(Y, from_params=True)
+        numpyro.factor("loglikelihood", ll(params))
+
+
+rule all:
+    input: ["loglikelihood.pdf", "em_summary.json", "em_table.txt", "prior_posterior.pdf"]
+
+
+rule sample_data_mutual_exclusivity:
+    output: "data.npy"
+    run:
+        weights, components = muex.convert_to_bernoulli_mixture(GROUND_TRUTH_PARAMETERS, n_genes=N_GENES)
+        data = bmm.sample_bernoulli_mixture(
+            key=jax.random.PRNGKey(2024),
+            n_samples=N_SAMPLES,
+            mixture_weights=weights,
+            mixture_components=components,
+        )
+
+        data = np.asarray(data)
+        np.save(str(output), data, allow_pickle=False)
+
+
+rule fit_muex:
+    input: "data.npy"
+    output:
+        inits = [f"em/init{i}.npy" for i in range(N_INITS)]
+    run:
+        data = np.load(str(input), allow_pickle=False)
+        
+        initial_params_list = []
+
+        no_errors_estimate = muex.estimate_no_errors(data)
+        initial_params = muex.Parameters(
+            false_positive_rate=0.02,
+            false_negative_rate=0.02,
+            coverage=no_errors_estimate.coverage,
+            impurity=no_errors_estimate.impurity,
+        )
+        initial_params_list.append(initial_params)
+
+        additional_params = [
+            [0.05, 0.05, 0.7, 0.1],
+            [0.1, 0.2, 0.5, 0.3],
+            [0.1, 0.1, 0.3, 0.05],
+            [0.01, 0.01, 0.8, 0.01],
+            [0.08, 0.08, 0.5, 0.15],
+            [0.2, 0.05, 0.5, 0.1],
+        ]
+
+        for p in additional_params:
+            initial_params = muex.Parameters(
+                false_positive_rate=p[0],
+                false_negative_rate=p[1],
+                coverage=p[2],
+                impurity=p[3],
+            )
+            initial_params_list.append(initial_params)
+
+        if len(initial_params_list) < N_INITS:
+            additional_trajectories = N_INITS - len(initial_params_list)
+            rng = np.random.default_rng(10101)
+            for _ in range(additional_trajectories):
+                initial_params = muex.Parameters(
+                    false_positive_rate=rng.uniform(low=0.005, high=0.2),
+                    false_negative_rate=rng.uniform(low=0.005, high=0.2),
+                    coverage=rng.uniform(
+                        low=max(0.02, float(no_errors_estimate.coverage) - 0.2),
+                        high=min(0.98, float(no_errors_estimate.coverage) + 0.2)),
+                    impurity=rng.uniform(
+                        low=max(0.02, float(no_errors_estimate.impurity) - 0.2),
+                        high=min(0.98, float(no_errors_estimate.impurity) + 0.2)),
+                )
+                initial_params_list.append(initial_params)
+
+
+        trajectories = []
+        for i, initial_params in enumerate(initial_params_list):
+            _, trajectory = muex.em_algorithm(Y=data, params0=initial_params, max_iter=1000, threshold=1e-5)
+            
+            def wrap_params(p):
+                return jnp.asarray([
+                    p.false_positive_rate,
+                    p.false_negative_rate,
+                    p.coverage,
+                    p.impurity,
+                ])
+            trajectory = jnp.stack([wrap_params(p.new_params) for p in trajectory])
+            np.save(str(output.inits[i]), np.asarray(trajectory))
 
 
 rule plot_loglikelihood:
@@ -253,6 +301,7 @@ rule get_estimates:
 
         ground_truth = get_summary(GROUND_TRUTH_PARAMETERS, None)
 
+        max_trajectory_length = -1
         values = []
         for fp in input.inits:
             trajectory = np.load(fp, allow_pickle=False)
@@ -264,6 +313,7 @@ rule get_estimates:
                 impurity=p[3],
             )
             values.append(get_summary(params, len(trajectory)))
+            max_trajectory_length = max(max_trajectory_length, len(trajectory))
 
         i_opt = None
         loglike_opt = -1e9
@@ -275,8 +325,152 @@ rule get_estimates:
         summary = {
             "ground_truth": ground_truth,
             "optimum": values[i_opt],
+            "max_trajectory_length": max_trajectory_length,
             "runs": values,
         }
 
         with open(str(output), "w") as fh:
             json.dump(summary, fh)
+
+
+rule create_table:
+    input: "em_summary.json"
+    output: "em_table.txt"
+    run:
+        with open(str(input)) as fp:
+            summary = json.load(fp)
+        
+        data_rows = []
+
+        # Add ground truth data
+        gt = summary.get('ground_truth', {})
+        data_rows.append({
+            'name': 'Ground truth',
+            'false_positive_rate': gt.get('false_positive_rate', None),
+            'false_negative_rate': gt.get('false_negative_rate', None),
+            'coverage': gt.get('coverage', None),
+            'impurity': gt.get('impurity', None),
+            'loglikelihood': gt.get('loglikelihood', None)
+        })
+
+        runs_sorted = sorted(summary["runs"], key=lambda run: run["loglikelihood"], reverse=True)
+
+        # Add individual runs
+        for idx, run in enumerate(runs_sorted):
+            data_rows.append({
+                'name': f'Run {idx + 1}',
+                'false_positive_rate': run.get('false_positive_rate', None),
+                'false_negative_rate': run.get('false_negative_rate', None),
+                'coverage': run.get('coverage', None),
+                'impurity': run.get('impurity', None),
+                'loglikelihood': run.get('loglikelihood', None),
+            })
+
+        # Create LaTeX table components
+        header = (
+            "\\begin{tabular}{lrrrrr}\n"
+            "\\hline\n"
+            " & False Positive Rate & False Negative Rate & Coverage & Impurity & Loglikelihood\\\\\n"
+            "\\hline\n"
+        )
+
+        footer = "\\hline\n\\end{tabular}\n"
+
+        # Construct the table rows
+        rows = ''
+        for row in data_rows:
+            # Format numerical values and handle None
+            fpr = f"{row['false_positive_rate']:.3f}" if row['false_positive_rate'] is not None else ''
+            fnr = f"{row['false_negative_rate']:.3f}" if row['false_negative_rate'] is not None else ''
+            coverage = f"{row['coverage']:.3f}" if row['coverage'] is not None else ''
+            impurity = f"{row['impurity']:.3f}" if row['impurity'] is not None else ''
+            loglikelihood = f"${row['loglikelihood']:.3f}$" if row['loglikelihood'] is not None else ''
+            rows += f"{row['name']} & {fpr} & {fnr} & {coverage} & {impurity} & {loglikelihood} \\\\\n"
+
+        # Combine header, rows, and footer to form the complete table
+        table = header + rows + footer
+
+        # Write the LaTeX table to the output file
+        with open(str(output), 'w') as f:
+            f.write(table)
+
+
+rule compare_prior_posterior:
+    input:
+        prior_samples = "prior/samples.npz",
+        posterior_samples = "posterior/samples.npz"
+    output:
+        plot = "prior_posterior.pdf"
+    run:
+        fig, axs = subplots_from_axsize(axsize=([1, 1, 1, 1], 0.6), wspace=[0.25, 0.25, 0.25], left=0.1, bottom=0.5, top=0.02, right=1.0)
+
+        names = [
+            ("alpha", GROUND_TRUTH_PARAMETERS.false_positive_rate, "FPR $\\alpha$"),
+            ("beta", GROUND_TRUTH_PARAMETERS.false_negative_rate, "FNR $\\beta$"),
+            ("coverage", GROUND_TRUTH_PARAMETERS.coverage, "Coverage $\\gamma$"),
+            ("impurity", GROUND_TRUTH_PARAMETERS.impurity, "Impurity $\\xi$"),
+        ]
+
+        prior = np.load(input.prior_samples)
+        posterior = np.load(input.posterior_samples)
+
+        for (key, val, name), ax in zip(names, axs):
+            ax.spines[["top", "left", "right"]].set_visible(False)
+            ax.set_xlabel(name)
+            ax.set_yticks([])
+            
+            ax.axvline(val, color="k", linestyle=":", linewidth=1.0)
+
+            ax.hist(prior[key], bins=20, alpha=0.5, color="salmon", density=True)
+            ax.hist(posterior[key], bins=20, alpha=0.5, color="darkblue", density=True)
+
+        model_spec = [
+            ("Prior", "salmon"),
+            ("Posterior", "darkblue"),
+        ]
+
+        ax = axs[-1]
+        legend_patches = [mpatches.Patch(color=color, label=label) for label, color in model_spec]
+        ax.legend(handles=legend_patches, frameon=False, bbox_to_anchor=(0.7, 0.9))
+
+        fig.savefig(output.plot)
+
+
+rule sample_prior:
+    output:
+        samples = "prior/samples.npz",
+        summary = "prior/summary.csv"
+    run:
+        num_samples = 8_000
+        num_chains = 5
+
+        nuts_kernel = NUTS(muex_model, step_size=0.05, max_tree_depth=15)
+        mcmc = MCMC(nuts_kernel, num_warmup=num_samples, num_samples=num_samples, num_chains=num_chains)
+        mcmc.run(jax.random.PRNGKey(121), Y=None, posterior=False)
+        samples = mcmc.get_samples()
+        np.savez(output.samples, **samples)
+
+        summary_dict = diagnostics.summary(mcmc.get_samples(group_by_chain=True), group_by_chain=True)
+        pd.DataFrame(summary_dict).to_csv(output.summary, index=True)
+
+
+rule sample_posterior:
+    input:
+        data = "data.npy"
+    output:
+        samples = "posterior/samples.npz",
+        summary = "posterior/summary.csv"
+    run:
+        data = np.load(input.data, allow_pickle=False)
+
+        num_samples = 8_000
+        num_chains = 5
+
+        nuts_kernel = NUTS(muex_model, step_size=0.05, max_tree_depth=15)
+        mcmc = MCMC(nuts_kernel, num_warmup=num_samples, num_samples=num_samples, num_chains=num_chains)
+        mcmc.run(jax.random.PRNGKey(122), Y=data, posterior=True)
+        samples = mcmc.get_samples()
+        np.savez(output.samples, **samples)
+
+        summary_dict = diagnostics.summary(mcmc.get_samples(group_by_chain=True), group_by_chain=True)
+        pd.DataFrame(summary_dict).to_csv(output.summary, index=True)

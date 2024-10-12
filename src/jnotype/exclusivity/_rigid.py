@@ -279,7 +279,7 @@ def em_step(
     params: Parameters,
     k: Int[Array, " G+1"],
     counts: Int[Array, " G+1"],
-    _jitter: float = 1e-12,
+    _jitter: float = 1e-8,
 ):
     G = k.shape[0] - 1
     N = jnp.sum(counts)
