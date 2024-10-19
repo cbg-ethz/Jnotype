@@ -1,6 +1,8 @@
 """Convenient summary statistics,
 useful e.g. for posterior predictive checking."""
 
+from typing import Optional
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Int, Float
@@ -98,3 +100,74 @@ def calculate_atoms_occurrence(X: _DataSet) -> Int[Array, " 2**n_genes"]:
     n_genes = X.shape[1]
     length = jnp.power(2, n_genes)
     return jnp.bincount(indices, length=length)  # type: ignore
+
+
+def _get_leading_axis_size(pytree):
+    # Extract all leaf nodes from the PyTree
+    leaves = jax.tree_util.tree_leaves(pytree)
+
+    if not leaves:
+        raise ValueError("The PyTree has no leaves.")
+
+    # Assume the first leaf contains the leading axis
+    first_leaf = leaves[0]
+
+    # Ensure the leaf has a shape attribute
+    if hasattr(first_leaf, "shape") and len(first_leaf.shape) > 0:
+        return first_leaf.shape[0]
+    else:
+        raise ValueError("The first leaf does not have a valid shape.")
+
+
+def subsample_pytree(
+    key: jax.Array,
+    samples,
+    n_samples: Optional[int] = None,
+):
+    """Subsamples a PyTree along the leading axis."""
+    leading_size = _get_leading_axis_size(samples)
+
+    if n_samples > leading_size:
+        raise ValueError("n_samples cannot be larger than the leading axis size.")
+
+    # Generate a permutation of indices and select the first n_samples
+    perm = jax.random.permutation(key, leading_size)
+    selected_indices = perm[:n_samples]
+
+    def index_leaves(x):
+        """Function indexing each leaf"""
+        return x[selected_indices]
+
+    # Apply the indexing function to all leaves
+    subsampled_pytree = jax.tree_util.tree_map(index_leaves, samples)
+
+    return subsampled_pytree
+
+
+def simulate_summary_statistic(
+    key: jax.Array,
+    simulator_fn,
+    statistic_fn,
+    samples,
+):
+    """Simulates the summary statistics.
+
+    Args:
+        key: JAX random key
+        simulator_fn: function with the signature
+            (RandomKey, Sample) -> DataSet
+        statistic_fn: function with the signature
+            Sample -> Statistic
+        samples: a PyTree with structure `Sample`,
+            which has a leading (0th) axis in each leaf
+            corresponding to the samples from the distribution
+    """
+    n_samples = _get_leading_axis_size(samples)
+    keys = jax.random.split(key, n_samples)
+
+    def f(subkey, sample):
+        """Simulates a data set and calculates summary statistic."""
+        y_sim = simulator_fn(subkey, sample)
+        return statistic_fn(y_sim)
+
+    return jax.vmap(f)(keys, samples)
