@@ -19,7 +19,7 @@ def _wrap_array(y):
     Optional[ArrayLike] -> Optional[NumPy Array]
     """
     if y is not None:
-        return np.asarray(y)
+        return np.array(y)
     else:
         return None
 
@@ -75,7 +75,7 @@ def _plot_quantiles(
 
     # If alpha is not set, calculate a reasonable value
     if alpha is None:
-        alpha = min(0.1, 1 / (1 + len(quantiles)))
+        alpha = min(0.2, 1 / (1 + len(quantiles)))
 
     if color is None:
         color = rcParams["color_simulations"]
@@ -121,7 +121,7 @@ def _plot_trajectories(
     if color is None:
         color = rcParams["color_simulations"]
     if alpha is None:
-        alpha = min(0.02, 1 / (1 + num_trajectories))
+        alpha = min(0.1, 1 / (1 + num_trajectories))
 
     num_simulations = y_simulated.shape[0]
 
@@ -288,6 +288,8 @@ def plot_summary_statistic(
     data_linewidth: Optional[float] = None,
     data_markersize: Optional[float] = None,
     data_marker: str = "default",
+    residuals: bool = False,
+    residuals_type: Literal[None, "mean", "median"] = None,
 ) -> None:
     """Plots a summary statistic together with uncertainty.
 
@@ -324,6 +326,28 @@ def plot_summary_statistic(
     if y_simulated is not None:
         if len(y_simulated.shape) != 2 or y_simulated.shape[-1] != n_points:
             raise ValueError("Simulated data has wrong shape.")
+
+    # Transform data
+    if residuals:
+        if y_simulated is None:
+            raise ValueError("For residual plot one has to provide simulated data.")
+        # Try to infer residuals_type from summary_type, if not provided
+        if residuals_type is None and summary_type in ["median", "mean"]:
+            residuals_type = summary_type  # type: ignore
+
+        if residuals_type is None:
+            raise ValueError("Residuals type could not be automatically inferred.")
+        elif residuals_type == "mean":
+            y_perfect = np.mean(y_simulated, axis=0)
+        elif residuals_type == "median":
+            y_perfect = np.mean(y_simulated, axis=0)
+        else:
+            raise ValueError(f"Residuals type {residuals_type} not known.")
+
+        # Calculate the residuals
+        y_simulated = y_simulated - y_perfect[None, :]
+        if y_data is not None:
+            y_data = y_data - y_perfect
 
     # Plot simulated data
     if y_simulated is not None:

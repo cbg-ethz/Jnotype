@@ -102,12 +102,16 @@ def calculate_atoms_occurrence(X: _DataSet) -> Int[Array, " 2**n_genes"]:
     return jnp.bincount(indices, length=length)  # type: ignore
 
 
-def _get_leading_axis_size(pytree):
+def get_leading_axis_size(pytree) -> int:
+    """Infers the number of samples in a PyTree."""
     # Extract all leaf nodes from the PyTree
     leaves = jax.tree_util.tree_leaves(pytree)
 
     if not leaves:
         raise ValueError("The PyTree has no leaves.")
+
+    # TODO(Pawel): Go through all the leaves and check
+    #  if shapes agree
 
     # Assume the first leaf contains the leading axis
     first_leaf = leaves[0]
@@ -125,7 +129,10 @@ def subsample_pytree(
     n_samples: Optional[int] = None,
 ):
     """Subsamples a PyTree along the leading axis."""
-    leading_size = _get_leading_axis_size(samples)
+    leading_size = get_leading_axis_size(samples)
+
+    if n_samples is None:
+        n_samples = leading_size
 
     if n_samples > leading_size:
         raise ValueError("n_samples cannot be larger than the leading axis size.")
@@ -162,7 +169,7 @@ def simulate_summary_statistic(
             which has a leading (0th) axis in each leaf
             corresponding to the samples from the distribution
     """
-    n_samples = _get_leading_axis_size(samples)
+    n_samples = get_leading_axis_size(samples)
     keys = jax.random.split(key, n_samples)
 
     def f(subkey, sample):
