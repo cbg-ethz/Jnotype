@@ -27,8 +27,25 @@ from jnotype.checks import calculate_quantiles, calculate_mcc
 workdir: "generated/exclusivity/gbm_reproducibility"
 
 
+# GENESETS = {
+#     "muex-0-3B": ['ABCC9', 'PIK3CA', 'RPL5', 'TRAT1'],
+# }
+
+
 GENESETS = {
+    "misspecified": ["TP53", "CDKN2B", "NF1", "SPTA1"],
+    "muex-permutation-3A": ["EGFR", "GCSAML", "IDH1", "OTC"],
     "muex-0-3B": ['ABCC9', 'PIK3CA', 'RPL5', 'TRAT1'],
+    "muex-1-3C": ['PIK3C2G', 'PIK3CA', 'RPL5', 'TRAT1'],
+    "muex-2-3D": ['NF1', 'PIK3C2G', 'PIK3R1', 'TRAT1'],
+    "muex-3": ['ABCC9', 'PIK3C2G', 'PIK3CA', 'TRAT1'],
+    "muex-4": ['ABCC9', 'PIK3C2G', 'PIK3CA', 'SPTA1'],
+    "muex-5": ['ABCC9', 'KEL', 'PIK3C2G', 'PIK3CA'],
+    "muex-5": ['ABCC9', 'PIK3R1', 'RPL5', 'TRAT1'],
+    "muex-6": ['ABCC9', 'PIK3C2G', 'PIK3R1', 'TRAT1'],
+    "muex-7": ['PIK3C2G', 'PIK3R1', 'RPL5', 'TRAT1'],
+    "muex-8": ['ABCC9', 'PIK3C2G', 'PIK3CA', 'RPL5'],
+    "muex-9": ['ABCC9', 'KEL', 'PIK3C2G', 'RPL5'],
 }
 
 def get_prior_posterior_flag(name):
@@ -100,7 +117,7 @@ rule plot_figure_comparison:
 
         stats = posterior["_component_independent"]
         color = "blue"
-        quantiles = calculate_quantiles(samples=stats, quantiles=[0.05, 0.25, 0.5, 0.75, 0.95])
+        quantiles = calculate_quantiles(samples=stats, quantiles=np.array([0.05, 0.25, 0.5, 0.75, 0.95]))
         x_axis = jnp.arange(1, stats.shape[1] + 1)
         
         ax.set_ylim(0, quantiles.max() + 0.05)

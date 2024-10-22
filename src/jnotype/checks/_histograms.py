@@ -5,11 +5,15 @@ from typing import Sequence, Union, Literal
 import matplotlib.pyplot as plt
 import numpy as np
 
+import jax
+import jax.numpy as jnp
+from jaxtyping import Float, Array
+
 
 def calculate_quantiles(
-    samples: np.ndarray,
-    quantiles: np.ndarray,
-) -> np.ndarray:
+    samples: Float[Array, "n_samples dimension"],
+    quantiles: Float[Array, " n_quantiles"],
+) -> Float[Array, "n_quantiles dimension"]:
     """Calculates quantiles.
 
     Args:
@@ -20,15 +24,15 @@ def calculate_quantiles(
         quantile value for each dimension,
           shape (n_quantiles, dimension)
     """
-    return np.quantile(samples, axis=0, q=quantiles)
+    return jnp.quantile(samples, axis=0, q=quantiles)
 
 
 def apply_histogram(
-    draws: np.ndarray,
+    draws: Float[Array, "n_datasets n_values"],
     bins: Union[int, Sequence[float], np.ndarray],
     density: bool,
 ) -> np.ndarray:
-    """Maps `np.histogram` over several vectors of values
+    """Maps `jnp.histogram` over several vectors of values
     to contruct several histograms.
 
     Args:
@@ -39,11 +43,13 @@ def apply_histogram(
     Returns:
         histogram counts, shape (n_samples, bins)
     """
-    _, bins = np.histogram(draws[0], bins=bins)
+    _, bins = jnp.histogram(draws[0], bins=bins, density=density)
 
-    return np.asarray(
-        [np.histogram(vect, bins=bins, density=density)[0] for vect in draws]
-    )
+    def f(sample):
+        """Auxiliary function used for jax.vmap"""
+        return jnp.histogram(sample, bins=bins, density=density)[0]
+
+    return jax.vmap(f)(draws)
 
 
 def plot_histograms(
