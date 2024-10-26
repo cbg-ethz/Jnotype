@@ -33,7 +33,7 @@ def calculate_number_of_mutations_histogram(X: _DataSet) -> Int[Array, " n_genes
     return jnp.bincount(counts, length=n_genes + 1)
 
 
-def calculate_mcc(X: _DataSet) -> Float[Array, "n_genes n_genes"]:
+def _calculate_mcc(X: _DataSet) -> Float[Array, "n_genes n_genes"]:
     """Calculates the Matthews correlation coefficient
     of the observed sample.
 
@@ -48,6 +48,48 @@ def calculate_mcc(X: _DataSet) -> Float[Array, "n_genes n_genes"]:
            (i.e., the mutation frequency is 0 or 1)
     """
     return jnp.corrcoef(X, rowvar=False)
+
+
+def calculate_mcc(X):
+    """
+    Computes the Pearson correlation coefficient matrix for the input array X.
+
+    Parameters:
+    X (jnp.ndarray): Input data of shape (n_samples, n_features)
+
+    Returns:
+    jnp.ndarray: Correlation matrix of shape (n_features, n_features)
+    """
+    # Step 1: Center the data (subtract the mean)
+    X_mean = jnp.mean(X, axis=0)
+    X_centered = X - X_mean
+
+    # Step 2: Compute the covariance matrix
+    # Note: Using (n_samples - 1) for an unbiased estimator
+    covariance_matrix = jnp.dot(X_centered.T, X_centered) / (X.shape[0] - 1)
+
+    # Step 3: Compute standard deviations
+    std_devs = jnp.sqrt(jnp.diag(covariance_matrix))
+
+    # Step 4: Handle zero standard deviations to avoid division by zero
+    # Create a mask of non-zero standard deviations
+    non_zero_mask = std_devs > 0
+
+    # Compute the outer product of standard deviations
+    std_outer = jnp.outer(std_devs, std_devs)
+
+    # To avoid division by zero, set zero std to 1 temporarily (will mask later)
+    std_outer_safe = jnp.where(std_outer < 1e-17, 1, std_outer)
+
+    # Step 5: Compute the correlation matrix
+    corr_matrix = covariance_matrix / std_outer_safe
+
+    # Set correlations involving constant columns to zero
+    # Expand the mask to a 2D mask
+    mask_2d = jnp.outer(non_zero_mask, non_zero_mask)
+    corr_matrix = jnp.where(mask_2d, corr_matrix, 0.0)
+
+    return corr_matrix
 
 
 def _convert_binary_code_to_integer(x: Int[Array, " n_genes"]) -> Int[Array, " "]:
