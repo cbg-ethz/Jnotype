@@ -169,7 +169,7 @@ def log_p_cond(
     return log_pjoint - log_pcond
 
 
-def _conditional_probability_difference(
+def conditional_probability_difference(
     response: int,
     conditioning: int,
     mixture_weights: Float[Array, " n_components"],
