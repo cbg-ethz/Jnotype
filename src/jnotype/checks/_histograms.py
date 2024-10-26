@@ -103,7 +103,7 @@ def plot_histograms(
     elif uncertainty_type == "quantiles":
         for qs in quantiles:
             assert len(qs) == 2
-            qs_sorted = sorted(qs)
+            qs_sorted = np.asarray(sorted(qs))
             quants = calculate_quantiles(histograms, quantiles=qs_sorted)
             ax.stairs(
                 quants[1],
