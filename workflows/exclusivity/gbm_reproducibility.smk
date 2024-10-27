@@ -54,7 +54,10 @@ def plot_dataset(ax, dataset, labels=True, change_color=False, gene_list = None)
         cmap = "Blues"
     else:
         cmap = "Greys"
-    sns.heatmap(dataset[order, :].T, ax=ax, vmin=0, vmax=1, cbar=False, cmap=cmap, xticklabels=[], yticklabels=ticklabels)
+    
+    g = sns.heatmap(dataset[order, :].T, ax=ax, vmin=0, vmax=1, cbar=False, cmap=cmap, xticklabels=[], yticklabels=ticklabels)
+    g.set_yticklabels(g.get_yticklabels(), rotation=0, fontsize=8)
+    
     for spine in ax.spines.values():
         spine.set_visible(True)
     ax.set_xlabel(xlabel)
@@ -183,6 +186,79 @@ rule all:
         figure1 = "figure1/a.pdf",
         figure2 = "figure2.pdf",
         figure_full_pred = expand("{scenario}/figure_full_predictions.pdf", scenario=GENESETS.keys()),
+        appendix_figs = expand("appendix/{scenario}/full_pred.pdf", scenario=GENESETS.keys()),
+        
+
+
+rule create_summary_for_appendix:
+    input:
+        # Full model and flexible restricted model predictions
+        full_model_predictions = "{scenario}/figure_full_predictions.pdf",
+        flexible_restricted = "{scenario}/figure_restricted_flexible.pdf",
+        
+        # Independent model posterior predictive files
+        ind_num_mut = "{scenario}/independent/posterior_predictive/num_mutations.pdf",
+        ind_mcc = "{scenario}/independent/posterior_predictive/mcc.pdf",
+        ind_freq = "{scenario}/independent/posterior_predictive/mutation_frequency.pdf",
+        
+        # Restricted High Noise model posterior predictive files
+        rh_num_mut = "{scenario}/restricted_high_noise/posterior_predictive/num_mutations.pdf",
+        rh_mcc = "{scenario}/restricted_high_noise/posterior_predictive/mcc.pdf",
+        rh_freq = "{scenario}/restricted_high_noise/posterior_predictive/mutation_frequency.pdf",
+        
+        # Restricted More Flexible model posterior predictive files
+        rmf_num_mut = "{scenario}/restricted_more_flexible/posterior_predictive/num_mutations.pdf",
+        rmf_mcc = "{scenario}/restricted_more_flexible/posterior_predictive/mcc.pdf",
+        rmf_freq = "{scenario}/restricted_more_flexible/posterior_predictive/mutation_frequency.pdf",
+
+    output:
+        # Destination for full model and flexible restricted model predictions
+        full_model_predictions = "appendix/{scenario}/full_pred.pdf",
+        flexible_restricted = "appendix/{scenario}/flexible.pdf",
+        
+        # Destination for Independent model posterior predictive files
+        ind_num_mut = "appendix/{scenario}/independent/num_mut.pdf",
+        ind_mcc = "appendix/{scenario}/independent/mcc.pdf",
+        ind_freq = "appendix/{scenario}/independent/freq.pdf",
+        
+        # Destination for Restricted High Noise model posterior predictive files
+        rh_num_mut = "appendix/{scenario}/restricted_high_noise/num_mut.pdf",
+        rh_mcc = "appendix/{scenario}/restricted_high_noise/mcc.pdf",
+        rh_freq = "appendix/{scenario}/restricted_high_noise/freq.pdf",
+        
+        # Destination for Restricted More Flexible model posterior predictive files
+        rmf_num_mut = "appendix/{scenario}/restricted_more_flexible/num_mut.pdf",
+        rmf_mcc = "appendix/{scenario}/restricted_more_flexible/mcc.pdf",
+        rmf_freq = "appendix/{scenario}/restricted_more_flexible/freq.pdf",
+
+    shell:
+        """
+        # Create necessary directories
+        mkdir -p appendix/{wildcards.scenario}/independent
+        mkdir -p appendix/{wildcards.scenario}/restricted_high_noise
+        mkdir -p appendix/{wildcards.scenario}/restricted_more_flexible
+
+        # Copy full model predictions
+        cp {input.full_model_predictions} {output.full_model_predictions}
+
+        # Copy flexible restricted model predictions
+        cp {input.flexible_restricted} {output.flexible_restricted}
+
+        # Copy Independent model posterior predictive files
+        cp {input.ind_num_mut} {output.ind_num_mut}
+        cp {input.ind_mcc} {output.ind_mcc}
+        cp {input.ind_freq} {output.ind_freq}
+
+        # Copy Restricted High Noise model posterior predictive files
+        cp {input.rh_num_mut} {output.rh_num_mut}
+        cp {input.rh_mcc} {output.rh_mcc}
+        cp {input.rh_freq} {output.rh_freq}
+
+        # Copy Restricted More Flexible model posterior predictive files
+        cp {input.rmf_num_mut} {output.rmf_num_mut}
+        cp {input.rmf_mcc} {output.rmf_mcc}
+        cp {input.rmf_freq} {output.rmf_freq}
+        """
 
 
 rule figure1:
@@ -218,7 +294,7 @@ rule figure_plot_data:
     run:
         df = pd.read_csv(input.data, index_col=0)
         gene_names = df.columns
-        fig, ax = subplots_from_axsize(axsize=(3, 2), dpi=350)
+        fig, ax = subplots_from_axsize(axsize=(2, 1.2), dpi=250, bottom=0.3)
 
         plot_dataset(
             ax=ax,
