@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "jnotype"
 version = "0.1.0"
-description = ""
+description = "Jnotype: probabilistic modeling of high-dimensional binary data."
 authors = ["Paweł Czyż"]
 readme = "README.md"
 packages = [{include = "jnotype", from = "src"}]
@@ -17,6 +17,7 @@ polyagamma = "^1.3.5"
 arviz = "^0.15.1"
 xarray = "^2023.3.0"
 tqdm = "^4.65.0"
+numpyro = "^0.15.3"
 
 
 [tool.poetry.group.dev]

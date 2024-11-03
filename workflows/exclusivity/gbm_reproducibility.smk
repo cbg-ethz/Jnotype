@@ -579,7 +579,8 @@ rule plot_posterior_predictive_check:
                 samples=posterior_samples,
             )
             data_stat = stat_fn(data)
-            fig, ax = plt.subplots(figsize=(3, 2), dpi=300)
+            fig, ax = subplots_from_axsize(axsize=(3, 2), dpi=300, left=0.4)
+            ax.spines[["top", "right"]].set_visible(False)
             suffix = " (residuals)" if residuals else ""
             fig.suptitle(stat_title + suffix)
             plot_summary_statistic(
