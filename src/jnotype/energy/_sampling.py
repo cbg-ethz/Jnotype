@@ -20,23 +20,6 @@ _UnnormLogProb = Callable[
 ]  # Unnormalised log-probability function maps a binary vector of shape (G,) to a float
 
 
-def unnorm_log_prob_ising_model(
-    interaction_matrix: Int[Array, "G G"],
-) -> _UnnormLogProb:
-    """Returns the negative energy function for an Ising model.
-
-    Returns:
-        Callable:
-            A function mapping a binary vector of shape (G,) to a float.
-    """
-
-    def energy(y: _DataPoint) -> Float:
-        """Calculates the energy of a binary vector `y`."""
-        return jnp.dot(y, jnp.dot(interaction_matrix, y))
-
-    return lambda y: -energy(y)
-
-
 def categorical_exact_sampling(
     key: jax.Array,
     n_samples: int,

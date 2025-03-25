@@ -43,7 +43,8 @@ rule all:
         expand(f"{OUTPUT_DIR}/G_{{g}}/genotypes.npy", g=G_LIST),
         expand(f"{OUTPUT_DIR}/G_{{g}}/weights.npy", g=G_LIST)
 
-rule sample_ising_model:
+rule initialize_ising_model:
+    """Initialize the Ising model weights."""
     output:
         weights = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
     params:
@@ -62,21 +63,43 @@ rule sample_ising_model:
         )
         jnp.save(output.weights, mat)
 
-rule exact_sample_ising:
+rule sample_genotypes:
+    """Generate samples from the Ising model."""
     input:
-        interaction_matrix = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
+        weights = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
     output:
         genotypes = f"{OUTPUT_DIR}/G_{{g}}/genotypes.npy"
     params:
         n_samples=N_SAMPLES
     run:
         g = int(wildcards.g)
+        key = jrandom.PRNGKey(RANDOM_SEED)
+        mat = jnp.load(input.weights)
+        unnorm_log_prob_fn = unnorm_log_prob_ising_model(mat)
+        
         if g <= 10: 
-          key = jrandom.PRNGKey(RANDOM_SEED)
-          mat = jnp.load(input.interaction_matrix)
-          energy_fn = unnorm_log_prob_ising_model(mat)
-          samples = categorical_exact_sampling(key,  params.n_samples, g, energy_fn )
-          jnp.save(output.genotypes, samples)
+            samples = categorical_exact_sampling(key, params.n_samples, g, unnorm_log_prob_fn)
         else:
-          mat = jnp.load(input.interaction_matrix)
-          jnp.save(output.genotypes, mat)
+            kernel_key, init_key = jrandom.split(key, 2)
+            kernel = construct_systematic_bitflip_kernel(unnorm_log_prob_fn)
+            
+            initial_samples = jrandom.bernoulli(
+                init_key, 
+                p=0.5, 
+                shape=(params.n_samples, g)
+            )
+            
+            def run_chain(init_sample, subkey):
+                return gibbs_sample(
+                    key=subkey,
+                    kernel=kernel,
+                    initial_sample=init_sample,
+                    num_steps=1,
+                    warmup=1000
+                )[0]
+            
+            chain_keys = jrandom.split(kernel_key, params.n_samples)
+            samples = jax.vmap(run_chain)(initial_samples, chain_keys)
+            
+        jnp.save(output.genotypes, samples)
+
