@@ -6,7 +6,7 @@ import jax
 import jax.random as jrandom
 import jax.numpy as jnp
 
-from jaxtyping import Array, Int
+from jaxtyping import Array, Int, Float
 
 
 def generate_all_binary_vectors(G: int) -> Int[Array, "2**G G"]:
@@ -18,6 +18,23 @@ _DataPoint = Int[Array, " G"]
 _UnnormLogProb = Callable[
     [_DataPoint], float
 ]  # Unnormalised log-probability function maps a binary vector of shape (G,) to a float
+
+
+def unnorm_log_prob_ising_model(
+    interaction_matrix: Int[Array, "G G"],
+) -> _UnnormLogProb:
+    """Returns the negative energy function for an Ising model.
+
+    Returns:
+        Callable:
+            A function mapping a binary vector of shape (G,) to a float.
+    """
+
+    def energy(y: _DataPoint) -> Float:
+        """Calculates the energy of a binary vector `y`."""
+        return jnp.dot(y, jnp.dot(interaction_matrix, y))
+
+    return lambda y: -energy(y)
 
 
 def categorical_exact_sampling(
