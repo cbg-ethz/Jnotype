@@ -1,9 +1,9 @@
 # Snakefile
 #===============================================================================
-# Generate N=300 genotypes for G in {5, 10, 30} from an Ising model.
-# Off-diagonal entries are sampled from a spike-and-slab prior (80% zero entries,
-# otherwise drawn from Normal(0, 5^2)), and diagonal entries are drawn from
-# Normal(0, 5^2).
+# Generate genotypes for different values of N (50, 100) and G (5, 10, 30) 
+# from an Ising model. Off-diagonal entries are sampled from a spike-and-slab 
+# prior (80% zero entries, otherwise drawn from Normal(0, 5^2)), and diagonal 
+# entries are drawn from Normal(0, 5^2).
 #===============================================================================
 
 import os
@@ -18,12 +18,13 @@ import jax.random as jrandom
 # Figure out how to make conda environment work with whole project imports
 from workflow import *
 from _sampling import *
+from inference import *
 
 # -------------------------
 # PARAMETERS
 # -------------------------
-N_SAMPLES = 300
-G_LIST = [5, 10, 30]
+N_VALUES = [50, 100, 1000]  # Different sample sizes
+G_LIST = [5, 10]
 RANDOM_SEED = 42
 SPIKE_WEIGHT = 0.8
 SCALE = 5.0
@@ -40,7 +41,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 rule all:
     input:
-        expand(f"{OUTPUT_DIR}/G_{{g}}/genotypes.npy", g=G_LIST),
+        expand(f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/sampled_genotypes.npy", g=G_LIST, n=N_VALUES),
+        expand(f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy", g=G_LIST, n=N_VALUES),
         expand(f"{OUTPUT_DIR}/G_{{g}}/weights.npy", g=G_LIST)
 
 rule initialize_ising_model:
@@ -68,38 +70,54 @@ rule sample_genotypes:
     input:
         weights = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
     output:
-        genotypes = f"{OUTPUT_DIR}/G_{{g}}/genotypes.npy"
+        genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
     params:
-        n_samples=N_SAMPLES
+        seed=RANDOM_SEED
     run:
         g = int(wildcards.g)
-        key = jrandom.PRNGKey(RANDOM_SEED)
+        n_samples = int(wildcards.n)
+        os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
+        
+        # Use a different seed for each g,n combination to ensure independence
+        sample_seed = params.seed + g * 100 + n_samples
+        key = jrandom.PRNGKey(sample_seed)
+        
+        # Load the interaction matrix and create energy function
         mat = jnp.load(input.weights)
         unnorm_log_prob_fn = unnorm_log_prob_ising_model(mat)
         
         if g <= 10: 
-            samples = categorical_exact_sampling(key, params.n_samples, g, unnorm_log_prob_fn)
+            samples = categorical_exact_sampling(key, n_samples, g, unnorm_log_prob_fn)
         else:
-            kernel_key, init_key = jrandom.split(key, 2)
-            kernel = construct_systematic_bitflip_kernel(unnorm_log_prob_fn)
-            
-            initial_samples = jrandom.bernoulli(
-                init_key, 
-                p=0.5, 
-                shape=(params.n_samples, g)
-            )
-            
-            def run_chain(init_sample, subkey):
-                return gibbs_sample(
-                    key=subkey,
-                    kernel=kernel,
-                    initial_sample=init_sample,
-                    num_steps=1,
-                    warmup=1000
-                )[0]
-            
-            chain_keys = jrandom.split(kernel_key, params.n_samples)
-            samples = jax.vmap(run_chain)(initial_samples, chain_keys)
-            
+            samples = sample_from_kernel(key, n_samples, g, unnorm_log_prob_fn)
+        
         jnp.save(output.genotypes, samples)
 
+rule infer_network_bayes:
+    """Infer the network structure using Bayesian methods."""
+    input:
+        genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
+    output:
+        network = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/sampled_genotypes.npy"
+    params:
+        seed=RANDOM_SEED
+    run:
+        g = int(wildcards.g)
+        n_samples = int(wildcards.n)
+        os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
+        
+        # Use a different seed for each g,n combination to ensure independence
+        sample_seed = params.seed + g * 100 + n_samples
+        key = jrandom.PRNGKey(sample_seed)
+        
+        # Load the samples
+        X = jnp.load(input.genotypes)
+
+        engine = InferenceEngine(
+            num_warmup= 100,
+            num_samples = 500,
+            random_seed = params.seed
+        )
+        
+        samples = engine.run(IsingSpikeAndSlabBayes(10.0), X)
+        jnp.save(output.network, samples)

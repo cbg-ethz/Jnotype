@@ -11,6 +11,7 @@ from _prior import (
 from _sampling import (
     _DataPoint,
     _UnnormLogProb,
+    construct_systematic_bitflip_kernel,
 )
 
 
@@ -99,3 +100,22 @@ def gibbs_sample(
     _, all_samples = jax.lax.scan(scan_fn, initial_sample, step_keys)
 
     return all_samples[warmup:]
+
+
+def sample_from_kernel(key, n_samples: Int, g: Int, unnorm_log_prob_fn: _UnnormLogProb):
+    kernel_key, init_key = jrandom.split(key, 2)
+    kernel = construct_systematic_bitflip_kernel(unnorm_log_prob_fn)
+
+    initial_samples = jrandom.bernoulli(init_key, p=0.5, shape=(n_samples, g))
+
+    def run_chain(init_sample, subkey):
+        return gibbs_sample(
+            key=subkey,
+            kernel=kernel,
+            initial_sample=init_sample,
+            num_steps=1,
+            warmup=1000,
+        )[0]
+
+    chain_keys = jrandom.split(kernel_key, n_samples)
+    return jax.vmap(run_chain)(initial_samples, chain_keys)
