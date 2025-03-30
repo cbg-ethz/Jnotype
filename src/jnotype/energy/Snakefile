@@ -124,32 +124,32 @@ rule infer_network_bayes:
         samples = engine.run(IsingSpikeAndSlabBayes(10.0), X)
         jnp.save(output.network, samples)
 
-rule infer_network_dfd:
-    """Infer the network structure using Bayesian methods."""
-    input:
-        genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
-    output:
-        network = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/dfd/sampled_genotypes.npy"
-    params:
-        seed=RANDOM_SEED
-    run:
-        g = int(wildcards.g)
-        n_samples = int(wildcards.n)
-        os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
+# rule infer_network_dfd:
+#     """Infer the network structure using Bayesian methods."""
+#     input:
+#         genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
+#     output:
+#         network = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/dfd/sampled_genotypes.npy"
+#     params:
+#         seed=RANDOM_SEED
+#     run:
+#         g = int(wildcards.g)
+#         n_samples = int(wildcards.n)
+#         os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
         
-        # Use a different seed for each g,n combination to ensure independence
-        sample_seed = params.seed + g * 100 + n_samples
-        key = jrandom.PRNGKey(sample_seed)
+#         # Use a different seed for each g,n combination to ensure independence
+#         sample_seed = params.seed + g * 100 + n_samples
+#         key = jrandom.PRNGKey(sample_seed)
         
-        # Load the samples
-        X = jnp.load(input.genotypes)
+#         # Load the samples
+#         X = jnp.load(input.genotypes)
 
-        engine = InferenceEngine(
-            num_warmup= 200,
-            num_samples = 1000,
-            num_chains = 4,
-            random_seed = params.seed
-        )
+#         engine = InferenceEngine(
+#             num_warmup= 200,
+#             num_samples = 1000,
+#             num_chains = 4,
+#             random_seed = params.seed
+#         )
         
-        samples = engine.run(DFD(10.0), X)
-        jnp.save(output.network, samples)
+#         samples = engine.run(DFD(10.0), X)
+#         jnp.save(output.network, samples)
