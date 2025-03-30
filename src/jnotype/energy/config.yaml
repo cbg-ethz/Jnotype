@@ -1,0 +1,6 @@
+cores: 100
+jobs: 100
+latency-wait: 60
+use-conda: true
+cluster: "sbatch --time={cluster.time} --cpus-per-task={cluster.cpus-per-task} --mem={cluster.mem} -o {cluster.output} -e {cluster.error}"
+cluster-config: "cluster_config.json"
