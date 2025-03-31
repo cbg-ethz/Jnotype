@@ -61,17 +61,11 @@ class IsingSpikeAndSlabBayes(InferenceModel):
         N, G = X.shape
 
         # Hyperpriors for spike probability and slab scale
-        # pi = numpyro.sample("pi", Beta(1, 5))
-        pi = 0.1
-
-        # sigma = numpyro.sample(
-        #     "sigma", Uniform(low=5, high=self.prior_sigma_max)  # type: ignore
-        # )
-        sigma = 10
+        pi = numpyro.sample("pi", Beta(1, 5))
 
         # sample the interaction matrix theta
         with numpyro.plate("diag_plate", G):
-            diag_vals = numpyro.sample("diag_vals", Normal(0, 5))  # type: ignore
+            diag_vals = numpyro.sample("diag_vals", Normal(0, scale=self.prior_sigma_max))  # type: ignore
 
         mix_probs = jnp.array([pi, 1 - pi])
         total_offdiag = number_of_interactions_quadratic(G)
@@ -80,11 +74,11 @@ class IsingSpikeAndSlabBayes(InferenceModel):
                 mixing_distribution=CategoricalProbs(probs=mix_probs),
                 component_distributions=[
                     Normal(loc=0.0, scale=0.01),
-                    Normal(loc=0.0, scale=sigma),  # type: ignore
+                    Normal(loc=0.0, scale=self.prior_sigma_max),  # type: ignore
                 ],
             )
 
-            off_diag_vals = numpyro.sample("theta_offdiag", mixture)  # type: ignore
+            off_diag_vals = numpyro.sample("off_diag_vals", mixture)  # type: ignore
         theta = create_symmetric_interaction_matrix(diag_vals, off_diag_vals)  # type: ignore
         all_binary_vec = generate_all_binary_vectors(G)
 
@@ -123,50 +117,49 @@ class DFD(InferenceModel):
         logp_offdiag = prior_dist.log_prob(off_diag_vals).sum()
         return logp_diag + logp_offdiag
 
-    def model(self, X: Int[Array, "N G"]):
+    def model(self, X: Int[Array, "N G"], calculate_beta: bool = False):
         N, G = X.shape
 
         # prior theta
         num_diag, num_offdiag = G, number_of_interactions_quadratic(G)
         with numpyro.plate("diag_plate", num_diag):
-            diag_vals = numpyro.sample("diag_vals", Normal(0, 5))  # type: ignore
+            diag_vals = numpyro.sample("diag_vals", Normal(0, self.prior_sigma_max))  # type: ignore
         with numpyro.plate("offdiag_plate", num_offdiag):
             off_diag_vals = numpyro.sample(
                 "off_diag_vals", Normal(0, self.prior_sigma_max)  # type: ignore
             )
 
         theta = create_symmetric_interaction_matrix(diag_vals, off_diag_vals)  # type: ignore
+        log_prior = self._gaussian_log_prior(
+            diag_vals, off_diag_vals, self.prior_sigma_max
+        )
 
-        # no need for normalization constant
         def log_q(yy):
+            """calculates the unnormalized log-probability of the model"""
             return -yy.T @ theta @ yy
 
-        beta = 50
+        if calculate_beta:
+            optimizer = optax.adam(learning_rate=1e-3)
+            key = jrandom.PRNGKey(42)
+            LEARNING_RATE = 0.01
+            OPT_STEPS = 200
+            B = 500
+            beta_key, loss_key = jrandom.split(key)
+            beta, loss_values = calibrate_beta(
+                key=beta_key,
+                dataset=X,
+                B=B,
+                dfd_loss_fn=discrete_fisher_divergence(partial(log_q), X),  # type: ignore
+                logprior_fn=self._gaussian_log_prior,  # type: ignore
+                initial_params=theta,
+                optimizer=optimizer,
+                num_steps=OPT_STEPS,
+            )
+        else:
+            beta = 10
+
         dfd = discrete_fisher_divergence(log_q, X)
         numpyro.factor("dfd_loss", -beta * N * dfd)
-
-        # theta_log_prior = self._gaussian_log_prior(
-        #     diag_vals, off_diag_vals, self.prior_sigma_max
-        # )
-        # optimizer = optax.adam(learning_rate=1e-3)
-        # key = jrandom.PRNGKey(42)
-        # LEARNING_RATE = 0.01
-        # OPT_STEPS = 200
-        # B = 500
-        # beta_key, loss_key = jrandom.split(key)
-        # calculated_beta, loss_values = calibrate_beta(
-        #     beta_key,
-        #     X,
-        #     B,
-        #     dfd_loss_fn=discrete_fisher_divergence,
-        #     self._gaussian_log_prior,
-        #     theta,
-        #     optimizer,
-        #     OPT_STEPS,
-        # )
-
-        # # calculate the optimal beta
-        # beta = optimal_beta(X, log_q, Normal(0, self.prior_sigma_max))
 
 
 class InferenceEngine:

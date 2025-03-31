@@ -35,7 +35,7 @@ def unnorm_log_prob_ising_model(
 # -------------------------
 # Helper function
 # -------------------------
-def sample_ising_model_matrix(rng_key, G, p_zero, scale):
+def sample_ising_model_matrix(rng_key, G, spike, scale):
     """Samples an interaction matrix for an Ising model with a spike-and-slab prior.
 
     Args:
@@ -43,8 +43,8 @@ def sample_ising_model_matrix(rng_key, G, p_zero, scale):
         Key for random number generation in JAX.
       G: int
         Length of the input sequence.
-      p_zero: float
-        Probability that off-diagonal entries are zero ("spike").
+      spike: float
+        Probability that off-diagonal entries are non zero ("spike").
       scale: float
         Standard deviation for the slab normal distribution.
 
@@ -60,7 +60,7 @@ def sample_ising_model_matrix(rng_key, G, p_zero, scale):
 
     # Number of off-diagonal interactions
     num_offdiag = number_of_interactions_quadratic(G)
-    mask = jrandom.bernoulli(key_off_diag_mask, p=1.0 - p_zero, shape=(num_offdiag,))
+    mask = jrandom.bernoulli(key_off_diag_mask, p=spike, shape=(num_offdiag,))
     normal_values = scale * jrandom.normal(key_off_diag_norm, shape=(num_offdiag,))
     off_diag_vals = jnp.array(jnp.where(mask, normal_values, 0.0))
 

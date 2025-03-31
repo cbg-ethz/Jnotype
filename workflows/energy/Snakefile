@@ -19,15 +19,7 @@ import jax.random as jrandom
 from _utils import *
 from jnotype.energy._sampling import *
 from _inference import *
-
-# -------------------------
-# PARAMETERS
-# -------------------------
-N_VALUES = [300]  # Different sample sizes
-G_LIST = [5]
-RANDOM_SEED = 42
-SPIKE_WEIGHT = 0.8
-SCALE = 5.0
+from _params import *
 
 # -------------------------
 # PATHS
@@ -61,7 +53,7 @@ rule initialize_ising_model:
         mat = sample_ising_model_matrix(
             key, 
             g, 
-            p_zero=params.spike_weight, 
+            spike=params.spike_weight, 
             scale=params.scale
         )
         jnp.save(output.weights, mat)
@@ -115,8 +107,8 @@ rule infer_network_bayes:
         X = jnp.load(input.genotypes)
 
         engine = InferenceEngine(
-            num_warmup= 200,
-            num_samples = 1000,
+            num_warmup= 100,
+            num_samples = 500,
             num_chains = 4,
             random_seed = params.seed
         )
@@ -145,8 +137,8 @@ rule infer_network_dfd:
         X = jnp.load(input.genotypes)
 
         engine = InferenceEngine(
-            num_warmup= 200,
-            num_samples = 1000,
+            num_warmup= 100,
+            num_samples = 500,
             num_chains = 4,
             random_seed = params.seed
         )

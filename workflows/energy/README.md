@@ -1,4 +1,8 @@
-# Developmental workflow
+## Usage
+
+1. The workflow can be invoked by simply running `snakemake` under this directory.
+
+2. The `explore.py` provides boilerplate code for check the sampled posterior values of elements.
 
 Simply running `snakemake` will start the sampling workflow
 
