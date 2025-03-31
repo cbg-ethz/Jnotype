@@ -25,57 +25,6 @@ LossFnDataset = Callable[[Params, DataSet], Float[Array, " "]]
 LossFnParams = Callable[[Params], Float[Array, " "]]
 
 
-def increment(g: Integer, y: DataPoint) -> DataPoint:
-    """Increments the count at site `g` by 1."""
-    return y.at[g].add(1)
-
-
-def decrement(g: Integer, y: DataPoint) -> DataPoint:
-    """Decrements the count at site `g` by 1."""
-    return y.at[g].add(-1)
-
-
-def _dfd_onepoint_count(log_q: LogProbFn, y: DataPoint) -> Float[Array, " "]:
-    """
-    Calculates the discrete Fisher divergence for count data on a single data point.
-
-    Args:
-        log_q: unnormalized log-probability function
-        y: data point on which it should be evaluated
-    """
-    log_qy = log_q(y)
-    indices = jnp.arange(y.shape[0])
-
-    # Term with decrements: (p_theta(x_i^j-) / p_theta(x_i))^2
-    def log_q_dec_fn(g: Integer):
-        return log_q(decrement(g, y))
-
-    log_q_dec = jax.vmap(log_q_dec_fn)(indices)
-    log_ratio_dec = log_q_dec - log_qy
-    dec_term = jnp.where(
-        y > 0, jnp.exp(2 * log_ratio_dec), jnp.array(0.0)
-    )  # account for decrementing 0
-
-    # Term with increments: -2 * (p_theta(x_i) / p_theta(x_i^j+))
-    def log_q_inc_fn(g: Integer):
-        return log_q(increment(g, y))
-
-    log_q_inc = jax.vmap(log_q_inc_fn)(indices)
-    log_ratio_inc = log_qy - log_q_inc
-    inc_term = -2 * jnp.exp(log_ratio_inc)
-
-    return jnp.sum(dec_term + inc_term)
-
-
-def dfd_count(log_q: LogProbFn, ys: DataSet) -> Float[Array, " "]:
-    """
-    Evaluates the discrete Fisher divergence between the model distribution
-    and the empirical distribution for count data.
-    """
-    f = partial(_dfd_onepoint_count, log_q)
-    return jnp.mean(jax.vmap(f)(ys))
-
-
 def _optimal_beta_single(
     param: Params, loss: LossFnParams, logprior: LogPriorFn
 ) -> Tuple[Float[Array, " "], Float[Array, " "]]:

@@ -19,7 +19,7 @@ from workflow import (
 
 from _sampling import generate_all_binary_vectors
 from _dfd import discrete_fisher_divergence
-from _dfd_ll import optimal_beta
+from _dfd_ll import *
 import optax
 from typing import Callable
 
@@ -60,14 +60,17 @@ class IsingSpikeAndSlabBayes(InferenceModel):
         N, G = X.shape
 
         # Hyperpriors for spike probability and slab scale
-        pi = numpyro.sample("pi", Beta(1, 5))
-        sigma = numpyro.sample(
-            "sigma", Uniform(low=0, high=self.prior_sigma_max)  # type: ignore
-        )
+        # pi = numpyro.sample("pi", Beta(1, 5))
+        pi = 0.1
+
+        # sigma = numpyro.sample(
+        #     "sigma", Uniform(low=5, high=self.prior_sigma_max)  # type: ignore
+        # )
+        sigma = 10
 
         # sample the interaction matrix theta
         with numpyro.plate("diag_plate", G):
-            diag_vals = numpyro.sample("diag_vals", Normal(0, sigma))  # type: ignore
+            diag_vals = numpyro.sample("diag_vals", Normal(0, 5))  # type: ignore
 
         mix_probs = jnp.array([pi, 1 - pi])
         total_offdiag = number_of_interactions_quadratic(G)
@@ -80,7 +83,7 @@ class IsingSpikeAndSlabBayes(InferenceModel):
                 ],
             )
 
-            off_diag_vals = numpyro.sample("theta_offdiag", mixture)
+            off_diag_vals = numpyro.sample("theta_offdiag", mixture)  # type: ignore
         theta = create_symmetric_interaction_matrix(diag_vals, off_diag_vals)  # type: ignore
         all_binary_vec = generate_all_binary_vectors(G)
 
@@ -125,27 +128,44 @@ class DFD(InferenceModel):
         # prior theta
         num_diag, num_offdiag = G, number_of_interactions_quadratic(G)
         with numpyro.plate("diag_plate", num_diag):
-            diag_vals = numpyro.sample("diag_vals", Normal(0, self.prior_sigma_max))  # type: ignore
+            diag_vals = numpyro.sample("diag_vals", Normal(0, 5))  # type: ignore
         with numpyro.plate("offdiag_plate", num_offdiag):
             off_diag_vals = numpyro.sample(
                 "off_diag_vals", Normal(0, self.prior_sigma_max)  # type: ignore
             )
-        theta_log_prior = self._gaussian_log_prior(
-            diag_vals, off_diag_vals, self.prior_sigma_max
-        )
+
         theta = create_symmetric_interaction_matrix(diag_vals, off_diag_vals)  # type: ignore
 
         # no need for normalization constant
         def log_q(yy):
             return -yy.T @ theta @ yy
 
-        optimizer = optax.adam(learning_rate=1e-3)
-
-        # calculate the optimal beta
-        beta = optimal_beta(X, log_q, Normal(0, self.prior_sigma_max))
-
+        beta = 50
         dfd = discrete_fisher_divergence(log_q, X)
         numpyro.factor("dfd_loss", -beta * N * dfd)
+
+        # theta_log_prior = self._gaussian_log_prior(
+        #     diag_vals, off_diag_vals, self.prior_sigma_max
+        # )
+        # optimizer = optax.adam(learning_rate=1e-3)
+        # key = jrandom.PRNGKey(42)
+        # LEARNING_RATE = 0.01
+        # OPT_STEPS = 200
+        # B = 500
+        # beta_key, loss_key = jrandom.split(key)
+        # calculated_beta, loss_values = calibrate_beta(
+        #     beta_key,
+        #     X,
+        #     B,
+        #     dfd_loss_fn=discrete_fisher_divergence,
+        #     self._gaussian_log_prior,
+        #     theta,
+        #     optimizer,
+        #     OPT_STEPS,
+        # )
+
+        # # calculate the optimal beta
+        # beta = optimal_beta(X, log_q, Normal(0, self.prior_sigma_max))
 
 
 class InferenceEngine:
@@ -174,7 +194,6 @@ class InferenceEngine:
 
 
 if __name__ == "__main__":
-    # Generate synthetic data
     rng_key = jax.random.PRNGKey(42)
     X = jnp.load("data/G_5/N_50/genotypes.npy")
     model = DFD(prior_sigma_max=5.0)
