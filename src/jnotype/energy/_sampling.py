@@ -6,7 +6,7 @@ import jax
 import jax.random as jrandom
 import jax.numpy as jnp
 
-from jaxtyping import Array, Int, Float
+from jaxtyping import Array, Int
 
 
 def generate_all_binary_vectors(G: int) -> Int[Array, "2**G G"]:
