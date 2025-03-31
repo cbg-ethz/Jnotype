@@ -43,8 +43,9 @@ rule initialize_ising_model:
     output:
         weights = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
     params:
-        spike_weight=SPIKE_WEIGHT,
-        scale=SCALE
+        spike_weight = SPIKE_WEIGHT,
+        spike_scale = SPIKE_SCALE,
+        diag_scale = DIAG_SCALE
     run:
         key = jrandom.PRNGKey(RANDOM_SEED)
         g = int(wildcards.g)
@@ -53,8 +54,9 @@ rule initialize_ising_model:
         mat = sample_ising_model_matrix(
             key, 
             g, 
-            spike=params.spike_weight, 
-            scale=params.scale
+            spike_weight=params.spike_weight, 
+            spike_scale=params.spike_scale,
+            diag_scale=params.diag_scale
         )
         jnp.save(output.weights, mat)
 

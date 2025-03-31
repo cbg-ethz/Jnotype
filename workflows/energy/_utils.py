@@ -14,6 +14,12 @@ from jnotype.energy._sampling import (
     construct_systematic_bitflip_kernel,
 )
 
+from _params import (
+    SPIKE_WEIGHT,
+    SPIKE_SCALE,
+    DIAG_SCALE,
+)
+
 
 def unnorm_log_prob_ising_model(
     interaction_matrix: Int[Array, "G G"],
@@ -35,7 +41,13 @@ def unnorm_log_prob_ising_model(
 # -------------------------
 # Helper function
 # -------------------------
-def sample_ising_model_matrix(rng_key, G, spike, scale):
+def sample_ising_model_matrix(
+    rng_key,
+    G,
+    spike_weight=SPIKE_WEIGHT,
+    spike_scale=SPIKE_SCALE,
+    diag_scale=DIAG_SCALE,
+):
     """Samples an interaction matrix for an Ising model with a spike-and-slab prior.
 
     Args:
@@ -56,12 +68,14 @@ def sample_ising_model_matrix(rng_key, G, spike, scale):
     """
     key_off_diag_mask, key_off_diag_norm, key_diag = jrandom.split(rng_key, 3)
 
-    diag_vals = scale * jrandom.normal(key_diag, shape=(G,))
+    diag_vals = diag_scale * jrandom.normal(key_diag, shape=(G,))
 
     # Number of off-diagonal interactions
     num_offdiag = number_of_interactions_quadratic(G)
-    mask = jrandom.bernoulli(key_off_diag_mask, p=spike, shape=(num_offdiag,))
-    normal_values = scale * jrandom.normal(key_off_diag_norm, shape=(num_offdiag,))
+    mask = jrandom.bernoulli(key_off_diag_mask, p=spike_weight, shape=(num_offdiag,))
+    normal_values = spike_scale * jrandom.normal(
+        key_off_diag_norm, shape=(num_offdiag,)
+    )
     off_diag_vals = jnp.array(jnp.where(mask, normal_values, 0.0))
 
     mat = create_symmetric_interaction_matrix(diag_vals, off_diag_vals)

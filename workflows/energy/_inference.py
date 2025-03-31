@@ -17,6 +17,12 @@ from _utils import (
     number_of_interactions_quadratic,
 )
 
+from _params import (
+    SPIKE_SCALE,
+    SLAB_PRIOR,
+    DIAG_SCALE,
+)
+
 # TODO(allen): correctly import these like the rest of the workflow files
 from jnotype.energy._sampling import generate_all_binary_vectors
 from jnotype.energy._dfd import discrete_fisher_divergence
@@ -44,11 +50,18 @@ class IsingSpikeAndSlabBayes(InferenceModel):
     Bayesian Ising with spike-slab prior on a GxG matrix Theta, y in {0,1}.
     """
 
-    def __init__(self, prior_sigma_max: Float):
+    def __init__(
+        self,
+        prior_diag_scale: Float = DIAG_SCALE,
+        spike_scale: Float = SPIKE_SCALE,
+        slab_prior: Float = SLAB_PRIOR,
+    ):
         """
         prior_sigma_max: upper bound for the slab scale in Uniform(0, prior_sigma_max).
         """
-        self.prior_sigma_max = prior_sigma_max
+        self.prior_diag_scale = prior_diag_scale
+        self.spike_scale = spike_scale
+        self.slab_prior = slab_prior
 
     def model(self, X: Int[Array, "N G"]):
         """
@@ -61,11 +74,11 @@ class IsingSpikeAndSlabBayes(InferenceModel):
         N, G = X.shape
 
         # Hyperpriors for spike probability and slab scale
-        pi = numpyro.sample("pi", Beta(1, 5))
+        pi = numpyro.sample("pi", Beta(1, 5))  # the true dist is 0.1
 
         # sample the interaction matrix theta
         with numpyro.plate("diag_plate", G):
-            diag_vals = numpyro.sample("diag_vals", Normal(0, scale=self.prior_sigma_max))  # type: ignore
+            diag_vals = numpyro.sample("diag_vals", Normal(0, scale=self.prior_diag_scale))  # type: ignore
 
         mix_probs = jnp.array([pi, 1 - pi])
         total_offdiag = number_of_interactions_quadratic(G)
@@ -73,8 +86,8 @@ class IsingSpikeAndSlabBayes(InferenceModel):
             mixture = MixtureGeneral(
                 mixing_distribution=CategoricalProbs(probs=mix_probs),
                 component_distributions=[
-                    Normal(loc=0.0, scale=0.01),
-                    Normal(loc=0.0, scale=self.prior_sigma_max),  # type: ignore
+                    Normal(loc=0.0, scale=self.slab_prior),
+                    Normal(loc=0.0, scale=self.spike_scale),  # type: ignore
                 ],
             )
 
