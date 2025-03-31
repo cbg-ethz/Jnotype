@@ -3,12 +3,12 @@ import jax.numpy as jnp
 import jax.random as jrandom
 from jaxtyping import Array, Float, Int
 
-from _prior import (
+from jnotype.energy._prior import (
     create_symmetric_interaction_matrix,
     number_of_interactions_quadratic,
 )
 
-from _sampling import (
+from jnotype.energy._sampling import (
     _DataPoint,
     _UnnormLogProb,
     construct_systematic_bitflip_kernel,

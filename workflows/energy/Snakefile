@@ -16,9 +16,9 @@ import jax.random as jrandom
 
 # TODO: there's a difference between .venv and conda environment. 
 # Figure out how to make conda environment work with whole project imports
-from workflow import *
-from _sampling import *
-from inference import *
+from _utils import *
+from jnotype.energy._sampling import *
+from _inference import *
 
 # -------------------------
 # PARAMETERS

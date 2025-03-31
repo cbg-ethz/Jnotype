@@ -12,14 +12,15 @@ from numpyro.distributions import (
     MixtureGeneral,
 )
 
-from workflow import (
+from _utils import (
     create_symmetric_interaction_matrix,
     number_of_interactions_quadratic,
 )
 
-from _sampling import generate_all_binary_vectors
-from _dfd import discrete_fisher_divergence
-from _dfd_ll import *
+# TODO(allen): correctly import these like the rest of the workflow files
+from jnotype.energy._sampling import generate_all_binary_vectors
+from jnotype.energy._dfd import discrete_fisher_divergence
+from _dfd_beta import *
 import optax
 from typing import Callable
 
