@@ -115,7 +115,7 @@ rule infer_network_bayes:
             random_seed = params.seed
         )
         
-        samples = engine.run(IsingSpikeAndSlabBayes(10.0), X)
+        samples = engine.run(IsingSpikeAndSlabBayes(SPIKE_SCALE ), X)
         jnp.save(output.network, samples)
 
 rule infer_network_dfd:
@@ -145,5 +145,5 @@ rule infer_network_dfd:
             random_seed = params.seed
         )
         
-        samples = engine.run(DFD(10.0), X)
+        samples = engine.run(DFD(SPIKE_SCALE), X)
         jnp.save(output.network, samples)
