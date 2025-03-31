@@ -109,9 +109,9 @@ rule infer_network_bayes:
         X = jnp.load(input.genotypes)
 
         engine = InferenceEngine(
-            num_warmup= 100,
-            num_samples = 500,
-            num_chains = 4,
+            num_warmup= NUM_WARMUP,
+            num_samples = NUM_SAMPLES,
+            num_chains = NUM_CHAINS,
             random_seed = params.seed
         )
         
@@ -139,9 +139,9 @@ rule infer_network_dfd:
         X = jnp.load(input.genotypes)
 
         engine = InferenceEngine(
-            num_warmup= 100,
-            num_samples = 500,
-            num_chains = 4,
+            num_warmup= NUM_WARMUP,
+            num_samples = NUM_SAMPLES,
+            num_chains = NUM_CHAINS,
             random_seed = params.seed
         )
         
