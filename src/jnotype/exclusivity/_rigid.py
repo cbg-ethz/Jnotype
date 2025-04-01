@@ -14,7 +14,7 @@ def _bincount(counts: Int[Array, " counts"], n_genes: int) -> Int[Array, " n_gen
 
 
 def _calculate_summary_statistic(
-    Y: Int[Array, "n_samples n_genes"]
+    Y: Int[Array, "n_samples n_genes"],
 ) -> Int[Array, " n_genes+1"]:
     """Calculates the summary statistic, counting the occurences of 1s."""
     return _bincount(counts=Y.sum(axis=-1), n_genes=Y.shape[-1])
