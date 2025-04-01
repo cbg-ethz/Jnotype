@@ -48,7 +48,7 @@ def func_to_01(f: Callable[[PosNegArray], _T]) -> Callable[[BinaryArray], _T]:
 
     def g(x):
         """Composed function."""
-        return f(array_to_01(x))
+        return f(array_to_pos_neg(x))
 
     return g
 
@@ -63,7 +63,7 @@ def func_to_pos_neg(f: Callable[[BinaryArray], _T]) -> Callable[[PosNegArray], _
 
     def g(y):
         """Composed function."""
-        return f(array_to_pos_neg(y))
+        return f(array_to_01(y))
 
     return g
 
