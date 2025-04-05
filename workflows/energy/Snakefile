@@ -1,0 +1,149 @@
+# Snakefile
+#===============================================================================
+# Generate genotypes for different values of N (50, 100) and G (5, 10, 30) 
+# from an Ising model. Off-diagonal entries are sampled from a spike-and-slab 
+# prior (80% zero entries, otherwise drawn from Normal(0, 5^2)), and diagonal 
+# entries are drawn from Normal(0, 5^2).
+#===============================================================================
+
+import os
+import sys
+from pathlib import Path
+
+import jax
+import jax.numpy as jnp
+import jax.random as jrandom
+
+# TODO: there's a difference between .venv and conda environment. 
+# Figure out how to make conda environment work with whole project imports
+from _utils import *
+from jnotype.energy._sampling import *
+from _inference import *
+from _params import *
+
+# -------------------------
+# PATHS
+# -------------------------
+OUTPUT_DIR = Path("data")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# -------------------------
+# Snakemake Rules
+# -------------------------
+
+rule all:
+    input:
+        expand(f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/dfd/sampled_genotypes.npy", g=G_LIST, n=N_VALUES),
+        expand(f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/bayes/sampled_genotypes.npy", g=G_LIST, n=N_VALUES),
+        expand(f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy", g=G_LIST, n=N_VALUES),
+        expand(f"{OUTPUT_DIR}/G_{{g}}/weights.npy", g=G_LIST)
+
+rule initialize_ising_model:
+    """Initialize the Ising model weights."""
+    output:
+        weights = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
+    params:
+        spike_weight = SPIKE_WEIGHT,
+        spike_scale = SPIKE_SCALE,
+        diag_scale = DIAG_SCALE
+    run:
+        key = jrandom.PRNGKey(RANDOM_SEED)
+        g = int(wildcards.g)
+        os.makedirs(f"{OUTPUT_DIR}/G_{g}", exist_ok=True)
+        
+        mat = sample_ising_model_matrix(
+            key, 
+            g, 
+            spike_weight=params.spike_weight, 
+            spike_scale=params.spike_scale,
+            diag_scale=params.diag_scale
+        )
+        jnp.save(output.weights, mat)
+
+rule sample_genotypes:
+    """Generate samples from the Ising model."""
+    input:
+        weights = f"{OUTPUT_DIR}/G_{{g}}/weights.npy"
+    output:
+        genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
+    params:
+        seed=RANDOM_SEED
+    run:
+        g = int(wildcards.g)
+        n_samples = int(wildcards.n)
+        os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
+        
+        # Use a different seed for each g,n combination to ensure independence
+        sample_seed = params.seed + g * 100 + n_samples
+        key = jrandom.PRNGKey(sample_seed)
+        
+        # Load the interaction matrix and create energy function
+        mat = jnp.load(input.weights)
+        unnorm_log_prob_fn = unnorm_log_prob_ising_model(mat)
+        
+        if g <= 10: 
+            samples = categorical_exact_sampling(key, n_samples, g, unnorm_log_prob_fn)
+        else:
+            samples = sample_from_kernel(key, n_samples, g, unnorm_log_prob_fn)
+        
+        jnp.save(output.genotypes, samples)
+
+rule infer_network_bayes:
+    """Infer the network structure using Bayesian methods."""
+    input:
+        genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
+    output:
+        network = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/bayes/sampled_genotypes.npy"
+    params:
+        seed=RANDOM_SEED
+    run:
+        g = int(wildcards.g)
+        n_samples = int(wildcards.n)
+        os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
+        
+        # Use a different seed for each g,n combination to ensure independence
+        sample_seed = params.seed + g * 100 + n_samples
+        key = jrandom.PRNGKey(sample_seed)
+        
+        # Load the samples
+        X = jnp.load(input.genotypes)
+
+        engine = InferenceEngine(
+            num_warmup= NUM_WARMUP,
+            num_samples = NUM_SAMPLES,
+            num_chains = NUM_CHAINS,
+            random_seed = params.seed
+        )
+        
+        samples = engine.run(IsingSpikeAndSlabBayes(SPIKE_SCALE ), X)
+        jnp.save(output.network, samples)
+
+rule infer_network_dfd:
+    """Infer the network structure using Bayesian methods."""
+    input:
+        genotypes = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/genotypes.npy"
+    output:
+        network = f"{OUTPUT_DIR}/G_{{g}}/N_{{n}}/dfd/sampled_genotypes.npy"
+    params:
+        seed=RANDOM_SEED
+    run:
+        g = int(wildcards.g)
+        n_samples = int(wildcards.n)
+        os.makedirs(f"{OUTPUT_DIR}/G_{g}/N_{n_samples}", exist_ok=True)
+        
+        # Use a different seed for each g,n combination to ensure independence
+        sample_seed = params.seed + g * 100 + n_samples
+        key = jrandom.PRNGKey(sample_seed)
+        
+        # Load the samples
+        X = jnp.load(input.genotypes)
+
+        engine = InferenceEngine(
+            num_warmup= NUM_WARMUP,
+            num_samples = NUM_SAMPLES,
+            num_chains = NUM_CHAINS,
+            random_seed = params.seed
+        )
+        
+        samples = engine.run(DFD(SPIKE_SCALE), X)
+        jnp.save(output.network, samples)
