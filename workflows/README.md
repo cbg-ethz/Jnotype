@@ -14,6 +14,8 @@ $ git checkout tags/TAG_NAME
 
 where `TAG_NAME` represents the right point in time for a particular project.
 
+Note that 
+
 
 ## Projects
 
@@ -35,7 +37,7 @@ Bayesian workflow employed to model mutual exclusivity patterns. This project is
 
 In this project we looked at labeled Bayesian pyramids, which introduce fixed effects to the framework of [Bayesian pyramids](https://academic.oup.com/jrsssb/article/85/2/399/7074362) of Yuqi Gu and David Dunson.
 As such, the labeled Bayesian pyramids are a subclass of dependent mixture models and can be used for exploratory data analysis of cancer genotypes. 
-The manuscript will be released in late 2024.
+The manuscript will be released in Summer 2025.
 
 ### Conditional Bernoulli mixture model
 
@@ -44,4 +46,13 @@ The manuscript will be released in late 2024.
 **Tag:** None
 
 In this project we propose the conditional Bernoulli mixture model and use them to model cancer genomes.
-The manuscript will be released in early 2025.
+The manuscript will be released in Autumn 2025.
+
+### Nonparametric extensions of the parametric models 
+
+**Directory:** `nonparametric`
+
+**Tag:** None
+
+In this project we discuss how to extend a given parametric model by forming a mixture of Dirichlet processes around it.
+The manuscript will be released in Autumn 2025.
