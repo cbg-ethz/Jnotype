@@ -17,6 +17,10 @@ import jax
 import jax.numpy as jnp
 import jnotype._dirichlet as dp
 
+import numpyro
+import numpyro.distributions as dist
+from numpyro.infer import NUTS, MCMC
+
 
 # %%
 def ll_fn(theta, y):
@@ -36,21 +40,17 @@ key, subkey = jax.random.split(key)
 
 p_true = jnp.asarray([0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5])
 n_genes = len(p_true)
-n_samples = 1000
+n_samples = 10
 data = jax.random.bernoulli(key, p=p_true, shape=(n_samples, len(p_true)))
 
 # %%
-data2 = [[1] * n_genes] * 200
+data2 = [[1] * n_genes] * 2000 + [[0] * n_genes] * 2000
 data2 = jnp.asarray(data2)
 
 data = jnp.concatenate([data, data2])
 
+
 # %%
-import numpyro
-import numpyro.distributions as dist
-from numpyro.infer import NUTS, MCMC
-
-
 def reparam_ps(x):
     return x  #  * p_true
 
@@ -82,9 +82,12 @@ loglike_perturbed = dp.construct_perturbed_loglikelihood(data, ll_fn)
 
 
 def perturbed_model():
-    alpha = numpyro.sample("alpha", dist.HalfCauchy(5.0))
-    eta_conc = 10.0
-    eta = numpyro.sample("eta", dist.Beta(eta_conc * 0.2, eta_conc * 0.8))
+    # alpha = numpyro.sample("alpha", dist.HalfCauchy(5.0))
+
+    alpha = 10.0
+
+    eta_conc = 6.0
+    eta = numpyro.sample("eta", dist.Beta(eta_conc * 0.5, eta_conc * 0.5))
     # eta = numpyro.sample("eta", dist.TruncatedNormal(loc=0.01, scale=0.2, low=0.001, high=1-0.001))
 
     conc1 = numpyro.sample("conc1", dist.Uniform(1, 10))
