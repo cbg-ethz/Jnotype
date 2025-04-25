@@ -38,9 +38,9 @@ def ll_same_fn(theta, y):
 key = jax.random.PRNGKey(42)
 key, subkey = jax.random.split(key)
 
-p_true = jnp.asarray([0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5])
+p_true = jnp.asarray([0.1, 0.15, 0.2])  # , 0.25, 0.3, 0.35, 0.4, 0.5])
 n_genes = len(p_true)
-n_samples = 10
+n_samples = 2
 data = jax.random.bernoulli(key, p=p_true, shape=(n_samples, len(p_true)))
 
 # %%
@@ -82,13 +82,10 @@ loglike_perturbed = dp.construct_perturbed_loglikelihood(data, ll_fn)
 
 
 def perturbed_model():
-    # alpha = numpyro.sample("alpha", dist.HalfCauchy(5.0))
-
-    alpha = 10.0
+    alpha = numpyro.sample("alpha", dist.HalfCauchy(5.0))
 
     eta_conc = 6.0
     eta = numpyro.sample("eta", dist.Beta(eta_conc * 0.5, eta_conc * 0.5))
-    # eta = numpyro.sample("eta", dist.TruncatedNormal(loc=0.01, scale=0.2, low=0.001, high=1-0.001))
 
     conc1 = numpyro.sample("conc1", dist.Uniform(1, 10))
     conc0 = numpyro.sample("conc0", dist.Uniform(1, 10))
@@ -105,6 +102,18 @@ def dummy_dp_model():
     # p = numpyro.sample("probs", dist.Uniform(0, 1))
     numpyro.factor("loglikelihood", loglike_dummy(0.5, alpha))
 
+
+# %%
+loglike_multinomial(p_true)
+
+# %%
+loglike_dp(p_true, 5e9)
+
+# %%
+loglike_perturbed(p_true, 1e9, 0.000001)
+
+# %%
+loglike_perturbed(p_true, 2_000_000, 0.99999)
 
 # %% [markdown]
 # ## Inference in the parametric model
