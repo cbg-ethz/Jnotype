@@ -2,11 +2,12 @@
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import betaln, gammaln
+from jax.scipy.special import gammaln
 import jnotype._reparam as reparam
 from functools import partial
 from typing import Callable, Sequence, TypeVar
 from jaxtyping import Float, Array
+
 
 _Float = Float[Array, " "]
 _Param = TypeVar("_Param")
@@ -14,6 +15,11 @@ _Param = TypeVar("_Param")
 
 def log_factorial(x):
     return gammaln(x + 1)
+
+
+def log_multinomial(x, log_p):
+    n = jnp.sum(x)
+    return log_factorial(n) - jnp.sum(log_factorial(x)) + jnp.sum(x * log_p)
 
 
 def construct_multinomial_loglikelihood(
@@ -33,29 +39,69 @@ def construct_multinomial_loglikelihood(
             params -> float
     """
     dataset = reparam.empirical_binary_vector_distribution(data)
-    log_const = log_factorial(dataset.n_datapoints) - jnp.sum(
-        log_factorial(dataset.counts)
-    )
 
     def f(param: _Param) -> _Float:
         """Function to be returned."""
         ll = partial(loglikelihood, param)
-        return log_const + dataset.calculate_function_sum(ll)
+        logps = jax.vmap(ll)(dataset.atoms)
+        return log_multinomial(dataset.counts, logps)
 
     return f
 
 
-def _safe_exp(log_x, *, floor: float):
+def _log_gamma_ratio(log_a, k):
+    """Numerically stable  log Γ(exp(log_a)+k) - log Γ(exp(log_a)),
+    computed in log-space as  Σ_{j=0}^{k-1} log(exp(log_a)+j)
+    using log-add-exp trick.
     """
-    exp(log_x) but clamps log_x on the left so that
-    we never reach exactly zero and still keep correct gradients.
-    """
-    return jnp.exp(jnp.clip(log_x, a_min=floor))
+    k = jnp.asarray(k, dtype=jnp.int32)
+
+    def body(i, acc):
+        i_f = i.astype(log_a.dtype)
+        return acc + jnp.logaddexp(log_a, jnp.log(i_f))
+
+    return jax.lax.fori_loop(0, k, body, 0.0)
 
 
-def construct_dirichlet_multinomial_loglikelihood(
-    data, loglikelihood, _clamp: float = -80.0
-):
+# vectorised version for a whole batch of counts
+_vmap_gamma_ratio = jax.vmap(_log_gamma_ratio)
+
+
+def log_dirichlet_multinomial(x, log_p, log_alpha):
+    """
+    Log-pmf of Dirichlet–multinomial with concentration α_i = exp(log_alpha + log_p_i),
+    implemented fully in log-space for numerical stability.
+
+    Args:
+        x: observed counts, integer array of shape (K,)
+        log_p: log-probabilities, float array of shape (K,)
+        log_alpha: scalar representing log(total concentration)
+
+    Return:
+        log_prob: log-likelihood
+    """
+    x = jnp.asarray(x)
+    log_p = jnp.asarray(log_p)
+    log_alpha = jnp.asarray(log_alpha)
+
+    n = jnp.sum(x, axis=-1)
+
+    # Multinomial coefficient term
+    log_coeff = log_factorial(n) - jnp.sum(log_factorial(x), axis=-1)
+
+    # Dirichlet normaliser: log Γ(α₀) – log Γ(α₀ + n)
+    log_alpha0_term = -_log_gamma_ratio(log_alpha, n.astype(jnp.int32))
+
+    # Component-wise ratio: Σ_i [log Γ(α_i + x_i) – log Γ(α_i)]
+    log_ai = log_alpha[..., None] + log_p
+    # Flatten, vmap, then restore (..., K) shape
+    ratio_terms = _vmap_gamma_ratio(log_ai.reshape(-1), x.reshape(-1)).reshape(x.shape)
+    log_ratio = jnp.sum(ratio_terms, axis=-1)
+
+    return log_coeff + log_alpha0_term + log_ratio
+
+
+def construct_dirichlet_multinomial_loglikelihood(data, loglikelihood):
     """Binds the loglikelihood function to the data set
     in the Dirichlet-multinomial model.
 
@@ -69,17 +115,17 @@ def construct_dirichlet_multinomial_loglikelihood(
           of signature (params, alpha) -> float
     """
     dataset = reparam.empirical_binary_vector_distribution(data)
-    n = dataset.n_datapoints
     counts = dataset.counts
 
     def f(param: _Param, alpha: float) -> float:
         ll = partial(loglikelihood, param)
         log_F_theta = jax.vmap(ll)(dataset.atoms)
-
-        parametric = _safe_exp(jnp.log(alpha) + log_F_theta, floor=_clamp)
-        log_num = jnp.log(n) + betaln(alpha, n)
-        log_den = jnp.sum(betaln(parametric, counts) + jnp.log(counts))
-        return log_num - log_den
+        log_alpha = jnp.log(alpha)
+        return log_dirichlet_multinomial(
+            x=counts,
+            log_p=log_F_theta,
+            log_alpha=log_alpha,
+        )
 
     return f
 
@@ -97,21 +143,16 @@ def construct_perturbed_loglikelihood(data, loglikelihood, _clamp: float = -80.0
           of signature (params, alpha, eta) -> float
     """
     dataset = reparam.empirical_binary_vector_distribution(data)
-    n = dataset.n_datapoints
     counts = dataset.counts
-    log_const = log_factorial(dataset.n_datapoints) - jnp.sum(
-        log_factorial(dataset.counts)
-    )
 
     def f(param: _Param, alpha: float, eta: float) -> float:
         ll = partial(loglikelihood, param)
         log_F_theta = jax.vmap(ll)(dataset.atoms)
-        logp_parametric = jnp.sum(log_F_theta) + log_const
 
-        alpha_F_theta = _safe_exp(jnp.log(alpha) + log_F_theta, floor=_clamp)
-        log_num = jnp.log(n) + betaln(alpha, n)
-        log_den = jnp.sum(betaln(alpha_F_theta, counts) + jnp.log(counts))
-        logp_nonparametric = log_num - log_den
+        logp_parametric = log_multinomial(counts, log_F_theta)
+        logp_nonparametric = log_dirichlet_multinomial(
+            counts, log_F_theta, jnp.log(alpha)
+        )
 
         log_eta = jnp.log(eta)
         log_1meta = jnp.log1p(-eta)
