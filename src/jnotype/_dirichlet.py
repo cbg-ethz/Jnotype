@@ -2,7 +2,7 @@
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import gammaln
+from jax.scipy.special import gammaln, digamma
 import jnotype._reparam as reparam
 from functools import partial
 from typing import Callable, Sequence, TypeVar
@@ -49,18 +49,48 @@ def construct_multinomial_loglikelihood(
     return f
 
 
-def _log_gamma_ratio(log_a, k):
-    """Numerically stable  log Γ(exp(log_a)+k) - log Γ(exp(log_a)),
-    computed in log-space as  Σ_{j=0}^{k-1} log(exp(log_a)+j)
-    using log-add-exp trick.
-    """
-    k = jnp.asarray(k, dtype=jnp.int32)
-
+def _lgamma_ratio_impl(log_a, k):
     def body(i, acc):
         i_f = i.astype(log_a.dtype)
         return acc + jnp.logaddexp(log_a, jnp.log(i_f))
 
     return jax.lax.fori_loop(0, k, body, 0.0)
+
+
+@jax.custom_vjp
+def _log_gamma_ratio(log_a, k):
+    return _lgamma_ratio_impl(log_a, k)
+
+
+# ---- forward & backward rules ---------------------------------------
+def _lgamma_ratio_fwd(log_a, k):
+    a = jnp.exp(log_a)
+    val = _lgamma_ratio_impl(log_a, k)
+    return val, (a, k)  # saved for backward
+
+
+def _lgamma_ratio_bwd(res, g):
+    a, k = res
+    grad_log_a = g * a * (digamma(a + k) - digamma(a))
+    # no gradient w.r.t. integer k
+    return (grad_log_a, jnp.zeros_like(k))
+
+
+_log_gamma_ratio.defvjp(_lgamma_ratio_fwd, _lgamma_ratio_bwd)
+
+
+# def _log_gamma_ratio(log_a, k):
+#     """Numerically stable  log Γ(exp(log_a)+k) - log Γ(exp(log_a)),
+#     computed in log-space as  Σ_{j=0}^{k-1} log(exp(log_a)+j)
+#     using log-add-exp trick.
+#     """
+#     k = jnp.asarray(k, dtype=jnp.int32)
+
+#     def body(i, acc):
+#         i_f = i.astype(log_a.dtype)
+#         return acc + jnp.logaddexp(log_a, jnp.log(i_f))
+
+#     return jax.lax.fori_loop(0, k, body, 0.0)
 
 
 # vectorised version for a whole batch of counts
