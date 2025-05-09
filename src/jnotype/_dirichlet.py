@@ -2,11 +2,11 @@
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import gammaln, digamma
+from jax.scipy.special import gammaln, digamma, betaln
 import jnotype._reparam as reparam
 from functools import partial
 from typing import Callable, Sequence, TypeVar
-from jaxtyping import Float, Array
+from jaxtyping import Float, Array, Bool, Int
 
 
 _Float = Float[Array, " "]
@@ -17,9 +17,13 @@ def log_factorial(x):
     return gammaln(x + 1)
 
 
-def log_multinomial(x, log_p):
+def multinomial_log_coef(x):
     n = jnp.sum(x)
-    return log_factorial(n) - jnp.sum(log_factorial(x)) + jnp.sum(x * log_p)
+    return log_factorial(n) - jnp.sum(log_factorial(x))
+
+
+def log_multinomial(x, log_p):
+    return multinomial_log_coef(x) + jnp.sum(x * log_p)
 
 
 def construct_multinomial_loglikelihood(
@@ -117,7 +121,7 @@ def log_dirichlet_multinomial(x, log_p, log_alpha):
     n = jnp.sum(x, axis=-1)
 
     # Multinomial coefficient term
-    log_coeff = log_factorial(n) - jnp.sum(log_factorial(x), axis=-1)
+    log_coeff = multinomial_log_coef(x)
 
     # Dirichlet normaliser: log Γ(α₀) – log Γ(α₀ + n)
     log_alpha0_term = -_log_gamma_ratio(log_alpha, n.astype(jnp.int32))
@@ -160,7 +164,7 @@ def construct_dirichlet_multinomial_loglikelihood(data, loglikelihood):
     return f
 
 
-def construct_perturbed_loglikelihood(data, loglikelihood, _clamp: float = -80.0):
+def construct_perturbed_loglikelihood(data, loglikelihood):
     """Binds the loglikelihood function to the perturbed model.
 
     Args:
@@ -188,5 +192,99 @@ def construct_perturbed_loglikelihood(data, loglikelihood, _clamp: float = -80.0
         log_1meta = jnp.log1p(-eta)
 
         return jnp.logaddexp(log_eta + logp_nonparametric, log_1meta + logp_parametric)
+
+    return f
+
+
+def sum_indicators(
+    items: Bool[Array, " N"],
+    class_sizes: Int[Array, " K"],
+) -> Int[Array, " K"]:
+    """For each class there are several binary items.
+    This function calculates how many items are active
+    within each class.
+
+    Args:
+        items: binary items. Array of shape (N,)
+        class_sizes: represents the class sizes. The first `class_sizes[0]`
+            items belong to class 0, then the next `class_sizes[1]` items
+            belong to class 1 etc.
+
+    Returns:
+        number of active items per class, shape the same as `class_sizes`
+    """
+    starts = jnp.concatenate([jnp.array([0]), jnp.cumsum(class_sizes)[:-1]])
+    # Note that this works in JAX v0.6.0, but not in v0.4.30
+    return jnp.add.reduceat(items, starts)
+
+
+def construct_mixture_loglikelihood(data, loglikelihood):
+    """Constructs the loglikelihood function for the mixture model.
+
+    Args:
+        data: binary array of shape (n_samples, n_loci)
+        loglikelihood: function of signature (params, genotype) -> float
+            calculating the loglikelihood for a single data point
+
+    Returns:
+        loglikelihood function `log P(Y | param, alpha, Z)`
+    """
+    dataset = reparam.empirical_binary_vector_distribution(data)
+    counts = dataset.counts
+
+    def f(param: _Param, alpha: float, z: jax.Array):
+        """Uses the counts summary statistics
+        constructed for both components."""
+        # Counts in the nonparametric component
+        counts_nonparam = sum_indicators(z, counts)
+        # Counts in the parametric component
+        counts_param = counts - counts_nonparam
+
+        ll = partial(loglikelihood, param)
+        log_F_theta = jax.vmap(ll)(dataset.atoms)
+
+        loglikelihood_param = log_multinomial(
+            counts_param, log_F_theta
+        ) - multinomial_log_coef(counts_param)
+        loglikelihood_nonparam = log_dirichlet_multinomial(
+            counts_nonparam, log_F_theta, jnp.log(alpha)
+        ) - multinomial_log_coef(counts_nonparam)
+
+        return loglikelihood_param + loglikelihood_nonparam
+
+    return f
+
+
+def construct_mixture_log_prob_integrated_weight(
+    data, loglikelihood, weight_beta_prior: tuple[float, float]
+):
+    """Constructs the loglikelihood function for the mixture model
+    with the mixture weight marginalized out
+
+    Args:
+        data: binary array of shape (n_samples, n_loci)
+        loglikelihood: function of signature (params, genotype) -> float
+            calculating the loglikelihood for a single data point
+        weight_beta_prior: the parameters (w_1, w_0) for the beta
+            prior on the weight
+
+    Returns:
+        loglikelihood function
+          log P(Y, Z | param, alpha) = log P(Y | param, alpha, Z) + log P(Z),
+          where P(Z) is a model sampling a weight w ~ Beta(w1, w0) and then
+          generating independently Z[n] ~ Bernoulli(w).
+    """
+    n: int = data.shape[0]
+    loglike_fn = construct_mixture_loglikelihood(data, loglikelihood)
+    w1, w0 = weight_beta_prior
+    log_denominator = betaln(w1, w0) + gammaln(n + w1 + w0)
+
+    def f(param: _Param, alpha: float, z: jax.Array):
+        """Uses the loglikelihood, correcting by the log-prior
+        factor, which has analytic form due to conjugacy."""
+        ll = loglike_fn(param, alpha, z)
+        n_ = jnp.sum(jnp.asarray(z, dtype=jnp.int32))
+        log_prior = gammaln(w1 + n_) + gammaln(w0 + n - n_) - log_denominator
+        return ll + log_prior
 
     return f
