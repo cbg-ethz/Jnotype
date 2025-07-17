@@ -5,8 +5,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('agg')
 
-from subplots_from_axsize import subplots_from_axsize
-
 import comparison
 
 import sys
@@ -31,7 +29,7 @@ def redirect_print(filename, mode='w', encoding=None):
         f.close()
 
 
-workdir: "generated/nonparametric/comparison"
+workdir: "generated/nonparametric/comparison-5-sites-new"
 
 def generate_data(key, epsilon, n_samples, p_true):
     key1, key2 = jax.random.split(key)
@@ -40,15 +38,16 @@ def generate_data(key, epsilon, n_samples, p_true):
     mask = jax.random.bernoulli(key2, p=1 - epsilon, shape=(n_samples, 1))
     return data * mask
 
-P_TRUE = jnp.linspace(5e-2, 0.1, 10)
+P_TRUE = jnp.linspace(0.1, 0.25, 5)
 
 EPSILONS = [1e-6, 0.5, 0.8]
-DATAPOINTS = [10, 30, 100, 1000]
+DATAPOINTS = [5, 10, 30, 100, 1000, 5_000]
 METHODS = ["bootstrap", "parametric", "dirichlet1", "adjustable"]
-N_BOOTSTRAP = 200
+N_BOOTSTRAP = 500
 
 COLORS = {
     "bootstrap": "purple",
+    "bootstrap-1000": "indigo",
     "dirichlet-tiny": "salmon",
     "dirichlet1": "red",
     "dirichlet-10": "maroon",
@@ -64,40 +63,12 @@ rule all:
         predictive=expand("predictive/{epsilon}/{method}/{n_datapoints}.npy", epsilon=EPSILONS, n_datapoints=DATAPOINTS, method=METHODS),
         plot_emr=expand("plots/{epsilon}/{n_datapoints}/expected-mutation-rate.pdf", epsilon=EPSILONS, n_datapoints=DATAPOINTS),
         plot_zero_mass=expand("plots/{epsilon}/{n_datapoints}/zero_mass.pdf", epsilon=EPSILONS, n_datapoints=DATAPOINTS),
-        plot_main=expand("plots/{epsilon}/{n_datapoints}/main.pdf", epsilon=EPSILONS, n_datapoints=DATAPOINTS),
-        final_plots=expand("plots/experiment-results/{specification}/{sample_size}.pdf", specification=["misspecified", "well-specified"], sample_size=["small", "large"]),
-
-
-rule:
-    output: "plots/experiment-results/well-specified/small.pdf"
-    input: "plots/1e-06/10/main.pdf"
-    shell:
-        """cp {input} {output}"""
-
-rule:
-    output: "plots/experiment-results/well-specified/large.pdf"
-    input: "plots/1e-06/1000/main.pdf"
-    shell:
-        """cp {input} {output}"""
-
-rule:
-    output: "plots/experiment-results/misspecified/small.pdf"
-    input: "plots/0.8/10/main.pdf"
-    shell:
-        """cp {input} {output}"""
-
-rule:
-    output: "plots/experiment-results/misspecified/large.pdf"
-    input: "plots/0.8/1000/main.pdf"
-    shell:
-        """cp {input} {output}"""
-
 
 rule generate_population:
     output: "population/{epsilon}.npy"
     run:
         epsilon = float(wildcards.epsilon)
-        key = jax.random.PRNGKey(101)
+        key = jax.random.PRNGKey(201)
         population = generate_data(key, epsilon, 200_000, P_TRUE)
         np.save(str(output), population)
 
@@ -108,7 +79,7 @@ rule generate_data:
         epsilon = float(wildcards.epsilon)
         n_datapoints = int(wildcards.n_datapoints)
 
-        key = jax.random.PRNGKey(101 + n_datapoints + int(105241 * epsilon))
+        key = jax.random.PRNGKey(201 + n_datapoints + int(15241 * epsilon))
         data = generate_data(key, epsilon, n_datapoints, P_TRUE)
         np.save(str(output), data)
 
@@ -128,6 +99,25 @@ rule get_predictive_bootstrap:
 
         predictive = np.stack([
             np.array(model.sample_predictive(jax.random.fold_in(subkey, i), n_samples=n_datapoints)) for i in range(N_BOOTSTRAP)
+        ], axis=0)
+        np.save(str(output), predictive)
+
+
+rule get_predictive_bootstrap_1000:
+    output: "predictive/{epsilon}/bootstrap-1000/{n_datapoints}.npy"
+    input: "data/{epsilon}/{n_datapoints}.npy"
+    run:
+        epsilon = float(wildcards.epsilon)
+        n_datapoints = int(wildcards.n_datapoints)
+        data = np.load(input[0])
+        data = jnp.asarray(data)
+
+        subkey = jax.random.PRNGKey(51 + n_datapoints + int(1524415 * epsilon))
+        model = comparison.SimpleBootstrap()
+        model.train(data, key=None)
+
+        predictive = np.stack([
+            np.array(model.sample_predictive(jax.random.fold_in(subkey, i), n_samples=1000)) for i in range(N_BOOTSTRAP)
         ], axis=0)
         np.save(str(output), predictive)
 
@@ -169,7 +159,7 @@ rule get_predictive_adjustable:
         data = np.load(input[0])
         data = jnp.asarray(data)
 
-        key = jax.random.PRNGKey(10 + n_datapoints + int(115 * epsilon))
+        key = jax.random.PRNGKey(10 + n_datapoints + int(1105 * epsilon))
         key, key1, key2 = jax.random.split(key, 3)
 
         model = comparison.AdjustableModel()
@@ -195,7 +185,7 @@ rule get_predictive_dirichlet1:
         data = np.load(input[0])
         data = jnp.asarray(data)
 
-        key = jax.random.PRNGKey(10 + n_datapoints + int(215051 * epsilon))
+        key = jax.random.PRNGKey(10 + n_datapoints + int(21235051 * epsilon))
         key, key1, key2 = jax.random.split(key, 3)
 
         model = comparison.DirichletPriorModel(alpha=1.0)
@@ -251,12 +241,14 @@ rule get_predictive_dirichlet_10:
         np.save(output.predictive, predictive)
 
 
+
 rule plot_performance_expected_mutation_rate:
     output: "plots/{epsilon}/{n_datapoints}/expected-mutation-rate.pdf"
     input:
         population="population/{epsilon}.npy",
         parametric="predictive/{epsilon}/parametric/{n_datapoints}.npy",
         bootstrap="predictive/{epsilon}/bootstrap/{n_datapoints}.npy",
+        bootstrap1000="predictive/{epsilon}/bootstrap-1000/{n_datapoints}.npy",
         dirichlet1="predictive/{epsilon}/dirichlet1/{n_datapoints}.npy",
         dirichlet_tiny="predictive/{epsilon}/dirichlet-tiny/{n_datapoints}.npy",
         dirichlet10="predictive/{epsilon}/dirichlet-10/{n_datapoints}.npy",
@@ -274,6 +266,7 @@ rule plot_performance_expected_mutation_rate:
 
         FILES = {
             "bootstrap": input.bootstrap,
+            "bootstrap-1000": input.bootstrap1000,
             "dirichlet-tiny": input.dirichlet_tiny,
             "dirichlet1": input.dirichlet1,
             "dirichlet-10": input.dirichlet10,
@@ -313,107 +306,13 @@ rule plot_performance_expected_mutation_rate:
         fig.savefig(output[0])
 
 
-rule plot_main_figure:
-    output: "plots/{epsilon}/{n_datapoints}/main.pdf"
-    input:
-        population="population/{epsilon}.npy",
-        parametric="predictive/{epsilon}/parametric/{n_datapoints}.npy",
-        bootstrap="predictive/{epsilon}/bootstrap/{n_datapoints}.npy",
-        dirichlet1="predictive/{epsilon}/dirichlet1/{n_datapoints}.npy",
-        dirichlet_tiny="predictive/{epsilon}/dirichlet-tiny/{n_datapoints}.npy",
-        dirichlet10="predictive/{epsilon}/dirichlet-10/{n_datapoints}.npy",
-        adjustable="predictive/{epsilon}/adjustable/{n_datapoints}.npy",
-    run:
-        def zero_atom_fn(y):
-            return jnp.mean(y.sum(axis=-1) < 1)
-
-        def mut_rate_fn(y):
-            return y[:, 0].mean()
-
-        def correlation_fn(y):
-            x1 = y[:, 0].ravel()
-            x2 = y[:, 1].ravel()
-            return jnp.corrcoef(x1, x2)[0, 1]
-
-        epsilon = float(wildcards.epsilon)
-
-        SUMM = {
-            "Mutation rate": {
-                "fn": mut_rate_fn,
-                "bounds": (0, 0.3),
-            },
-            "Zero atom": {
-                "fn": zero_atom_fn,
-                "bounds": (0, 1),
-            },
-            # "Correlation": correlation_fn,
-        }
-
-        FILES = {
-            "dirichlet-tiny": input.dirichlet_tiny,
-            # "dirichlet1": input.dirichlet1,
-            "dirichlet-10": input.dirichlet10,
-            "parametric": input.parametric,
-            "adjustable": input.adjustable,
-        }
-
-        NAMES = {
-            "dirichlet-tiny": "Dirichlet ($\\alpha\\to 0$)",
-            # "dirichlet1": input.dirichlet1,
-            "dirichlet-10": "Dirichlet ($\\alpha=10$)",
-            "parametric": "Parametric",
-            "adjustable": "MDP",
-        }
-
-        population = jnp.asarray(np.load(input.population))
-
-        fig, axs = subplots_from_axsize(
-            nrows=len(SUMM), ncols=len(FILES), axsize=(1.5, 1.2),
-            sharex="row", sharey=False,
-            top=0.4,
-        )
-        for i, (stat_name, obj) in enumerate(SUMM.items()):
-            for j, (method, filename) in enumerate(FILES.items()):
-                ax = axs[i, j]
-
-                if i == 0:
-                    ax.set_title(NAMES[method])
-
-                if j == 0:
-                    ax.set_ylabel(stat_name)
-                
-                # Unwrap the settings
-                stat_fn = obj["fn"]
-                bounds = obj["bounds"]
-                
-                ax.axvline(stat_fn(population), linewidth=3, linestyle=":", color="black")
-                # ax.set_xlim(*bounds)
-
-                color =  COLORS[method]
-                predictive = jnp.asarray(np.load(filename))
-                ax.hist(
-                    jax.vmap(stat_fn)(predictive),
-                    bins=jnp.linspace(bounds[0], bounds[1], 30),
-                    density=True,
-                    color=color,
-                    # alpha=0.2,
-                    # histtype="step",
-                )
-
-        # ax.set_xlim(0, 0.6)
-        for ax in axs.ravel():
-            ax.spines[["top", "left", "right"]].set_visible(False)
-            ax.set_yticks([])
-
-        fig.savefig(output[0])
-
-
 rule plot_performance_zero_mass:
     output: "plots/{epsilon}/{n_datapoints}/zero_mass.pdf"
     input:
         population="population/{epsilon}.npy",
         parametric="predictive/{epsilon}/parametric/{n_datapoints}.npy",
         bootstrap="predictive/{epsilon}/bootstrap/{n_datapoints}.npy",
+        bootstrap1000="predictive/{epsilon}/bootstrap-1000/{n_datapoints}.npy",
         dirichlet1="predictive/{epsilon}/dirichlet1/{n_datapoints}.npy",
         dirichlet_tiny="predictive/{epsilon}/dirichlet-tiny/{n_datapoints}.npy",
         dirichlet10="predictive/{epsilon}/dirichlet-10/{n_datapoints}.npy",
@@ -428,6 +327,7 @@ rule plot_performance_zero_mass:
         
         FILES = {
             "bootstrap": input.bootstrap,
+            "bootstrap-1000": input.bootstrap1000,
             "dirichlet-tiny": input.dirichlet_tiny,
             "dirichlet1": input.dirichlet1,
             "dirichlet-10": input.dirichlet10,
