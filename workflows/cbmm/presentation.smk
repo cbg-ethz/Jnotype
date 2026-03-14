@@ -358,17 +358,16 @@ rule mcmc_theta_cond_bernoulli:
     run:
         Y = pd.read_csv(input.mutations, index_col=0).values
 
-        N, G = Y.shape
+        _, G = Y.shape
         ns = Y.sum(axis=-1)
         loglike_fn = cbmodel.generate_loglikelihood(Y, n_max=ns.max())
 
         def model():
-            # The probabilities in a Bernoulli model
-            probs = numpyro.sample("probs", dist.Uniform(np.zeros(G), 1))
-            
-            # Now we need to calculate the weights vector, w = p/(1-p)
-            log_weights = jnp.log(probs) - jnp.log1p(-probs)
-            numpyro.factor("loglikelihood", loglike_fn(log_weights))
+            # Identifiable parameterization:
+            # probabilities constrained to the simplex.
+            probs = numpyro.sample("probs", dist.Dirichlet(jnp.ones(G)))
+            log_theta = cbmodel.simplex_to_log_theta(probs)
+            numpyro.factor("loglikelihood", loglike_fn(log_theta))
 
 
         # MCMC inference
@@ -586,10 +585,10 @@ rule generate_posterior_predictive_conditional_bernoulli_ith_sample:
         
         ns = joblib.load(input.posterior_predictive_n)[index, :]
         probs = joblib.load(input.theta_samples)["probs"][index, :]
-        log_weights = jnp.log(probs) - jnp.log1p(-probs)
+        log_theta = cbmodel.simplex_to_log_theta(jnp.asarray(probs))
         
         key = jax.random.PRNGKey(2 * index + 1)
-        Y = cbmodel.sample_conditional_bernoulli(key, ns=ns, log_theta=log_weights)
+        Y = cbmodel.sample_conditional_bernoulli(key, ns=ns, log_theta=log_theta)
 
         joblib.dump(Y, str(output))
 
