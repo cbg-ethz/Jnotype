@@ -393,7 +393,8 @@ rule plot_main_figure:
                 predictive = jnp.asarray(np.load(filename))
                 ax.hist(
                     jax.vmap(stat_fn)(predictive),
-                    bins=jnp.linspace(bounds[0], bounds[1], 30),
+                    bins=30,
+                    # bins=jnp.linspace(bounds[0], bounds[1], 30),
                     density=True,
                     color=color,
                     # alpha=0.2,
