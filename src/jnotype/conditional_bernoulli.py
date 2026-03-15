@@ -30,7 +30,7 @@ def _calculate_logZ_vector(
     n: int,
 ) -> Float[Array, " G"]:
     """Single dynamic-programming update for `log Z(n, \theta)` by feature index."""
-    neg_inf = jnp.array(-jnp.inf, dtype=log_theta.dtype)
+    neg_inf = jnp.finfo(log_theta.dtype).min
     g = logZ_prev.shape[0]
 
     prev = jnp.where(jnp.arange(g) < n - 1, neg_inf, jnp.roll(logZ_prev, shift=1))
@@ -184,12 +184,15 @@ def conditional_bernoulli_logpmf(
         raise ValueError(f"Expected `y` to have shape (G,), got ndim={y.ndim}.")
 
     if n is None:
-        n = int(jnp.sum(y))
+        n_index = jnp.asarray(jnp.sum(y), dtype=int)
+    else:
+        n_index = jnp.asarray(n, dtype=int)
 
     if precomputed_logZ is None:
-        precomputed_logZ = calculate_logZ(log_theta, n_max=max(0, int(n)))
+        # Use full support to stay compatible with JAX tracing
+        # (no Python int conversion from traced values).
+        precomputed_logZ = calculate_logZ(log_theta, n_max=y.shape[0])
 
-    n_index = jnp.asarray(n, dtype=int)
     safe_index = jnp.clip(n_index, 0, precomputed_logZ.shape[0] - 1)
     logZ_n = precomputed_logZ[safe_index]
 
@@ -214,7 +217,9 @@ def conditional_bernoulli_loglikelihood(
         raise ValueError(f"Expected `ys` to have shape (N, G), got ndim={ys.ndim}.")
 
     ns = _to_n_obs(ys, n_obs=n_obs)
-    n_max = int(jnp.max(ns)) if ns.size else 0
+    # Use full support {0, ..., G} to avoid tracer-to-int conversion
+    # in compiled contexts.
+    n_max = ys.shape[1]
     logZ = calculate_logZ(log_theta, n_max=n_max)
 
     ll_unnorm = jnp.einsum("ng,g->n", ys, log_theta)
@@ -225,7 +230,7 @@ def conditional_bernoulli_loglikelihood(
     valid_sums = ys.sum(axis=-1) == ns
     valid = jnp.logical_and(valid_ns, valid_sums)
 
-    neg_inf = jnp.array(-jnp.inf, dtype=log_theta.dtype)
+    neg_inf = jnp.finfo(log_theta.dtype).min
     ll = jnp.where(valid, ll, neg_inf)
     return jnp.sum(ll)
 
@@ -252,7 +257,9 @@ def conditional_bernoulli_component_loglikelihood_matrix(
         )
 
     ns = _to_n_obs(ys, n_obs=n_obs)
-    n_max = int(jnp.max(ns)) if ns.size else 0
+    # Use full support {0, ..., G} to avoid tracer-to-int conversion
+    # in compiled contexts.
+    n_max = ys.shape[1]
 
     logZ = calculate_logZ_batched(component_log_theta, n_max=n_max)  # (K, n_max+1)
 
@@ -266,7 +273,7 @@ def conditional_bernoulli_component_loglikelihood_matrix(
     valid_sums = ys.sum(axis=-1) == ns
     valid = jnp.logical_and(valid_ns, valid_sums)[:, None]
 
-    neg_inf = jnp.array(-jnp.inf, dtype=component_log_theta.dtype)
+    neg_inf = jnp.finfo(component_log_theta.dtype).min
     return jnp.where(valid, ll, neg_inf)
 
 
